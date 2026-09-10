@@ -93,19 +93,22 @@
     font-family:var(--mono);
   }
 
-  .tabs{ display:flex; gap:8px; padding:0 16px 10px; }
+  .tabs{ display:flex; gap:8px; padding:0 16px 10px; overflow-x:auto; scrollbar-width:none; }
+  .tabs::-webkit-scrollbar{ display:none; }
   .tab{
-    flex:1; padding:10px 12px;
+    flex:0 0 auto; padding:10px 14px;
     background:var(--surface); border:1px solid var(--border);
     color:var(--text-muted); border-radius:12px;
     font-family:var(--display); font-weight:600; font-size:13.5px;
-    cursor:pointer;
+    cursor:pointer; white-space:nowrap;
   }
   .tab.active{
     background:var(--gradient);
     border-color:transparent;
     color:#0A0A10;
   }
+
+  #network-row .tab{ flex:1; white-space:normal; }
 
   .platform-row{
     display:flex; gap:7px; padding:0 16px 12px;
@@ -186,6 +189,11 @@
   .tag.bp{ color:var(--text); background:var(--surface-2); border-color:transparent; }
   .tag.platform{ color:var(--cyan); border-color:rgba(34,211,238,0.4); }
   .tag.network{ color:var(--purple); border-color:rgba(168,85,247,0.4); }
+  .score-bar{ display:flex; gap:2px; width:100%; height:5px; margin-top:8px; border-radius:3px; overflow:hidden; }
+  .score-bar span{ flex:1; background:rgba(255,255,255,0.08); }
+  .score-bar span.on-high{ background:var(--green); }
+  .score-bar span.on-mid{ background:var(--yellow); }
+  .score-bar span.on-low{ background:var(--red); }
   .tag.sec-ok{ color:var(--green); border-color:rgba(52,211,153,0.5); }
   .tag.sec-bad{ color:var(--red); border-color:rgba(251,113,133,0.5); background:rgba(251,113,133,0.08); }
 
@@ -275,6 +283,20 @@
     background:var(--gradient); color:#0A0A10; text-decoration:none;
     font-size:14px; font-weight:700; padding:13px; border-radius:12px;
   }
+  .paper-buy-row{ display:flex; align-items:center; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
+  .paper-buy-label{ font-size:11.5px; color:var(--text-muted); flex:0 0 100%; margin-bottom:2px; }
+  .paper-buy-btn{
+    flex:1; background:var(--surface); border:1px solid var(--border); color:var(--text);
+    padding:9px 4px; border-radius:10px; font-family:var(--mono); font-weight:600; font-size:13px; cursor:pointer;
+  }
+  .paper-buy-btn:active{ background:var(--surface-2); }
+  .paper-toast{
+    position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
+    background:var(--gradient); color:#0A0A10; font-weight:700; font-size:13px;
+    padding:10px 18px; border-radius:20px; z-index:50; opacity:0; pointer-events:none;
+    transition:opacity .25s ease;
+  }
+  .paper-toast.show{ opacity:1; }
 </style>
 <script src="https://plugin.jup.ag/plugin-v1.js" data-preload defer></script>
 </head>
@@ -300,6 +322,7 @@
     <button class="tab active" data-tab="trending">En tendance</button>
     <button class="tab" data-tab="new">Nouvelles paires</button>
     <button class="tab" data-tab="watchlist">★ Watchlist</button>
+    <button class="tab" data-tab="paper">💰 Simulation</button>
   </div>
 
   <div class="platform-row" id="platform-row"></div>
@@ -313,6 +336,7 @@
 
 </div>
 
+<div class="paper-toast" id="paper-toast"></div>
 <div class="backdrop" id="backdrop"></div>
 <div class="sheet" id="sheet">
   <div class="sheet-handle"></div>
@@ -498,6 +522,13 @@
     </div>
   </div>
   <div class="chart-modal-footer">
+    <div class="paper-buy-row" id="paper-buy-row">
+      <span class="paper-buy-label">Simulation d'achat :</span>
+      <button class="paper-buy-btn" data-amount="25">25$</button>
+      <button class="paper-buy-btn" data-amount="50">50$</button>
+      <button class="paper-buy-btn" data-amount="100">100$</button>
+      <button class="paper-buy-btn" data-amount="250">250$</button>
+    </div>
     <a id="chart-modal-external" href="#" target="_blank" rel="noopener">Acheter / vendre sur GeckoTerminal ↗</a>
   </div>
 </div>
@@ -555,7 +586,10 @@ window.addEventListener('error', function(e){
     watchlistPools: null,
     watchlistLoading: false,
     alerts: loadJSON('hoodlum_alerts', { enabled: false, minLiquidity: 5000, minChange1h: 0, requireMintSafe: false, requireLpLocked: false }),
-    notifiedIds: new Set()
+    notifiedIds: new Set(),
+    paper: loadJSON('hoodlum_paper', { cash: 1000, positions: [] }),
+    paperLoading: false,
+    currentModalPool: null
   };
 
   const els = {
@@ -601,7 +635,9 @@ window.addEventListener('error', function(e){
     aMint: document.getElementById('a-mint'),
     aLp: document.getElementById('a-lp'),
     aClose: document.getElementById('a-close'),
-    aSave: document.getElementById('a-save')
+    aSave: document.getElementById('a-save'),
+    paperBuyRow: document.getElementById('paper-buy-row'),
+    paperToast: document.getElementById('paper-toast')
   };
 
   function escapeHTML(str){
@@ -868,6 +904,66 @@ window.addEventListener('error', function(e){
     render();
   }
 
+  function showToast(msg){
+    els.paperToast.textContent = msg;
+    els.paperToast.classList.add('show');
+    setTimeout(function(){ els.paperToast.classList.remove('show'); }, 2200);
+  }
+
+  function paperBuy(pool, usdAmount){
+    if(usdAmount > state.paper.cash){
+      showToast('Solde fictif insuffisant (' + formatUSD(state.paper.cash) + ' dispo)');
+      return;
+    }
+    if(!pool.priceUsd){
+      showToast('Prix indisponible, achat annulé');
+      return;
+    }
+    state.paper.cash -= usdAmount;
+    state.paper.positions.push({
+      id: pool.network + ':' + pool.address + ':' + Date.now(),
+      network: pool.network,
+      address: pool.address,
+      baseAddress: pool.baseAddress,
+      base: pool.base,
+      quote: pool.quote,
+      entryPrice: pool.priceUsd,
+      usdSpent: usdAmount,
+      tokenQty: usdAmount / pool.priceUsd,
+      openedAt: Date.now()
+    });
+    saveJSON('hoodlum_paper', state.paper);
+    showToast('Achat simulé : ' + formatUSD(usdAmount) + ' de ' + pool.base);
+  }
+
+  function paperSell(positionId, currentPrice){
+    const idx = state.paper.positions.findIndex(function(p){ return p.id === positionId; });
+    if(idx === -1) return;
+    const pos = state.paper.positions[idx];
+    const value = currentPrice ? pos.tokenQty * currentPrice : pos.usdSpent;
+    state.paper.cash += value;
+    state.paper.positions.splice(idx, 1);
+    saveJSON('hoodlum_paper', state.paper);
+    showToast('Vente simulée : ' + formatUSD(value) + ' récupérés');
+    if(state.tab === 'paper') refreshPaper(false);
+  }
+
+  async function refreshPaper(silent){
+    if(state.paper.positions.length === 0){ render(); return; }
+    if(!silent) state.paperLoading = true;
+    render();
+    const results = await Promise.allSettled(
+      state.paper.positions.map(function(p){ return fetchSinglePool(p.network, p.address); })
+    );
+    results.forEach(function(r, i){
+      if(r.status === 'fulfilled' && r.value){
+        state.paper.positions[i]._currentPrice = r.value.priceUsd;
+      }
+    });
+    state.paperLoading = false;
+    render();
+  }
+
   function switchNetwork(net){
     if(state.network === net) return;
     state.network = net;
@@ -999,6 +1095,15 @@ window.addEventListener('error', function(e){
     );
   }
 
+  function scoreBarHTML(parts){
+    const order = ['liq', 'mint', 'lp', 'buy', 'holders'];
+    return '<div class="score-bar">' + order.map(function(k){
+      const v = parts[k];
+      const cls = v === null ? '' : (v >= 70 ? 'on-high' : v >= 40 ? 'on-mid' : 'on-low');
+      return '<span class="' + cls + '"></span>';
+    }).join('') + '</div>';
+  }
+
   function rowHTML(pool, isNew){
     const risk = riskBadge(pool.liquidity);
     const bp = buyPressure(pool.txH1);
@@ -1052,10 +1157,10 @@ window.addEventListener('error', function(e){
           '<span class="tag network">' + escapeHTML(NETWORKS[pool.network] ? NETWORKS[pool.network].label : pool.network) + '</span>' +
           '<span class="tag platform">' + escapeHTML(formatPlatform(pool.dexId)) + '</span>' +
           '<span class="tag ' + risk.cls + '">' + risk.label + '</span>' +
-          '<span class="tag ' + scoreTierClass(score.total) + '">Score ' + (score.total === null ? '—' : score.total + '/100') + '</span>' +
           (bp !== null ? '<span class="tag bp">' + bp + '% achats (1h)</span>' : '') +
           secTags +
         '</div>' +
+        scoreBarHTML(score.parts) +
       '</div>'
     );
   }
@@ -1099,6 +1204,10 @@ window.addEventListener('error', function(e){
 
     if(state.tab === 'watchlist'){
       renderWatchlist();
+      return;
+    }
+    if(state.tab === 'paper'){
+      renderPaperTab();
       return;
     }
     document.getElementById('network-row').style.display = '';
@@ -1217,6 +1326,55 @@ window.addEventListener('error', function(e){
     els.list.innerHTML = sorted.map(function(p){ return rowHTML(p, false); }).join('');
   }
 
+  function renderPaperTab(){
+    document.getElementById('network-row').style.display = 'none';
+    els.platformRow.style.display = 'none';
+    els.filterCount.style.display = 'none';
+    els.status.textContent = '';
+    els.status.className = 'status';
+
+    let totalValue = state.paper.cash;
+    const rows = state.paper.positions.map(function(pos){
+      const current = pos._currentPrice || null;
+      const value = current ? pos.tokenQty * current : pos.usdSpent;
+      totalValue += value;
+      const pnl = value - pos.usdSpent;
+      const pnlPct = pos.usdSpent ? (pnl / pos.usdSpent) * 100 : 0;
+      const pnlCls = pnl >= 0 ? 'pos' : 'neg';
+      const pnlSign = pnl >= 0 ? '+' : '';
+      return (
+        '<div class="row">' +
+          '<div class="row-main-top">' +
+            '<div class="pair">' + escapeHTML(pos.base) + ' <span class="quote">/ ' + escapeHTML(pos.quote) + '</span></div>' +
+            '<div class="price">' + formatUSD(value) + '</div>' +
+          '</div>' +
+          '<div class="row-sub">' +
+            '<span class="change ' + pnlCls + '">' + pnlSign + formatUSD(pnl) + ' (' + pnlSign + pnlPct.toFixed(1) + '%)</span>' +
+            '<span class="meta">Entrée ' + formatUSD(pos.usdSpent) + ' · ' + escapeHTML(NETWORKS[pos.network].label) + '</span>' +
+          '</div>' +
+          '<button class="btn ghost" style="margin-top:10px;" data-sell-id="' + escapeHTML(pos.id) + '" data-sell-price="' + (current || '') + '">Vendre (simulation)</button>' +
+        '</div>'
+      );
+    }).join('');
+
+    els.updatedAt.textContent = state.paperLoading ? 'chargement…' : '—';
+
+    els.list.innerHTML =
+      '<div class="row" style="text-align:center;">' +
+        '<div class="score-panel-total">' + formatUSD(totalValue) + '</div>' +
+        '<div class="score-panel-caption">Valeur totale simulée · ' + formatUSD(state.paper.cash) + ' en liquide · ' + state.paper.positions.length + ' position(s) ouverte(s)</div>' +
+        '<button class="btn ghost" style="margin-top:12px;" id="paper-reset-btn">Réinitialiser (1000$ fictifs)</button>' +
+      '</div>' +
+      (rows || '<div class="empty">Aucune position. Ouvre une paire et utilise "Simulation d\'achat" en bas du graphique pour t\'entraîner sans argent réel.</div>');
+
+    const resetBtn = document.getElementById('paper-reset-btn');
+    if(resetBtn) resetBtn.addEventListener('click', function(){
+      state.paper = { cash: 1000, positions: [] };
+      saveJSON('hoodlum_paper', state.paper);
+      render();
+    });
+  }
+
   // network switcher events
   els.networkTabs.forEach(function(t){
     t.addEventListener('click', function(){
@@ -1231,6 +1389,8 @@ window.addEventListener('error', function(e){
       render();
       if(state.tab === 'watchlist'){
         if(state.watchlistPools === null) refreshWatchlist(false);
+      } else if(state.tab === 'paper'){
+        refreshPaper(false);
       } else if(!state.pools[state.tab]){
         refresh(state.tab, false);
       }
@@ -1343,7 +1503,7 @@ window.addEventListener('error', function(e){
   // chart modal
   function openChartModal(network, address, baseAddress, pairLabel){
     const chartUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address +
-      '?embed=1&info=0&swaps=0&light_chart=0&chart_type=price&resolution=1m&bg_color=0A0A10';
+      '?embed=1&info=0&swaps=0&light_chart=0&chart_type=price&resolution=1s&bg_color=0A0A10';
     const externalUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address;
     els.chartModalTitle.textContent = pairLabel;
     els.chartLoading.classList.remove('hidden');
@@ -1376,6 +1536,12 @@ window.addEventListener('error', function(e){
     els.chartModalIframe.src = ''; // stop loading/refreshing in the background
   }
   els.list.addEventListener('click', function(e){
+    const sellBtn = e.target.closest('[data-sell-id]');
+    if(sellBtn){
+      const price = sellBtn.dataset.sellPrice ? parseFloat(sellBtn.dataset.sellPrice) : null;
+      paperSell(sellBtn.dataset.sellId, price);
+      return;
+    }
     const starBtn = e.target.closest('.star-btn');
     if(starBtn){
       e.stopPropagation();
@@ -1390,6 +1556,7 @@ window.addEventListener('error', function(e){
     const pool = (state.tab === 'watchlist' ? state.watchlistPools : state.pools[state.tab]).find(function(p){ return p.address === address && p.network === row.dataset.network; });
     const sec = pool && pool.baseAddress ? state.securityCache[pool.network + ':' + pool.baseAddress.toLowerCase()] : null;
     const score = pool ? computeScore(pool, sec) : { total: null, parts: {} };
+    state.currentModalPool = pool || null;
     els.scorePanel.innerHTML =
       radarSVG(score.parts) +
       '<div class="score-panel-text">' +
@@ -1399,10 +1566,16 @@ window.addEventListener('error', function(e){
     openChartModal(row.dataset.network, address, row.dataset.baseAddress, row.dataset.pair);
   });
   els.chartModalClose.addEventListener('click', closeChartModal);
+  els.paperBuyRow.addEventListener('click', function(e){
+    const btn = e.target.closest('.paper-buy-btn');
+    if(!btn || !state.currentModalPool) return;
+    paperBuy(state.currentModalPool, parseFloat(btn.dataset.amount));
+  });
 
   setInterval(function(){
     if(document.visibilityState === 'visible'){
       if(state.tab === 'watchlist') refreshWatchlist(true);
+      else if(state.tab === 'paper') refreshPaper(true);
       else refresh(state.tab, true);
     }
   }, REFRESH_MS);
