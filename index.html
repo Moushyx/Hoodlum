@@ -154,7 +154,13 @@
     font-family:var(--display); font-weight:700; font-size:13px; color:#0A0A10;
   }
   .row-main{ flex:1; min-width:0; }
-  .row-main-top{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .row-main-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+  .row-top-right{ display:flex; flex-direction:column; align-items:flex-end; gap:2px; flex:0 0 auto; }
+  .star-btn{
+    background:none; border:none; color:var(--text-muted); font-size:17px;
+    padding:0 0 0 6px; cursor:pointer; line-height:1;
+  }
+  .star-btn.active{ color:var(--yellow); }
   .pair{ font-weight:700; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .pair .quote{ color:var(--text-muted); font-weight:500; font-size:12.5px; }
   .price{ font-family:var(--mono); font-size:13.5px; color:var(--text-muted); flex:0 0 auto; }
@@ -179,6 +185,7 @@
   .tag.risk-low{ color:var(--green); border-color:rgba(52,211,153,0.5); }
   .tag.bp{ color:var(--text); background:var(--surface-2); border-color:transparent; }
   .tag.platform{ color:var(--cyan); border-color:rgba(34,211,238,0.4); }
+  .tag.network{ color:var(--purple); border-color:rgba(168,85,247,0.4); }
   .tag.sec-ok{ color:var(--green); border-color:rgba(52,211,153,0.5); }
   .tag.sec-bad{ color:var(--red); border-color:rgba(251,113,133,0.5); background:rgba(251,113,133,0.08); }
 
@@ -242,11 +249,25 @@
     padding:14px 16px; background:var(--surface-solid); border-bottom:1px solid var(--border);
   }
   .chart-modal-title{ font-weight:700; font-size:15px; }
-  .chart-modal-body{ flex:1; background:#0A0A10; display:flex; flex-direction:column; overflow-y:auto; }
-  .chart-modal-body iframe{ width:100%; flex:0 0 55%; min-height:320px; border:0; }
-  #jupiter-plugin-wrap{ flex:1; padding:12px; background:var(--surface-solid); border-top:1px solid var(--border); }
+  .chart-modal-body{ flex:1; background:#0A0A10; display:flex; flex-direction:column; overflow-y:auto; -webkit-overflow-scrolling:touch; position:relative; }
+  .chart-modal-body iframe{ width:100%; flex:0 0 auto; height:min(62vh, 480px); min-height:340px; border:0; }
+  .chart-loading{
+    position:absolute; top:0; left:0; right:0; height:min(62vh, 480px); min-height:340px;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--text-muted); font-size:13px; font-family:var(--mono);
+    background:#0A0A10; pointer-events:none; transition:opacity .2s ease;
+  }
+  .chart-loading.hidden{ opacity:0; }
+  #jupiter-plugin-wrap{ flex:0 0 auto; padding:14px; background:var(--surface-solid); border-top:1px solid var(--border); }
   #jupiter-plugin{ max-width:420px; margin:0 auto; }
-  .chart-modal-footer{
+  .swap-hint{ text-align:center; font-size:11.5px; color:var(--text-muted); margin:0 0 10px; }
+  .score-panel{
+    display:flex; align-items:center; gap:14px;
+    padding:10px 16px; background:var(--surface-solid); border-bottom:1px solid var(--border);
+  }
+  .score-panel-text{ flex:1; }
+  .score-panel-total{ font-size:22px; font-weight:800; font-family:var(--mono); }
+  .score-panel-caption{ font-size:11px; color:var(--text-muted); margin-top:2px; line-height:1.5; }
     padding:12px 16px; background:var(--surface-solid); border-top:1px solid var(--border);
   }
   .chart-modal-footer a{
@@ -263,6 +284,7 @@
   <div class="topbar">
     <div class="brand"><span class="dot"></span><h1>Hoodlum</h1></div>
     <div class="topbar-actions">
+      <button class="icon-btn" id="alert-btn" title="Alertes">🔔<span class="badge-count" id="alert-count" style="display:none;">•</span></button>
       <button class="icon-btn" id="filter-btn" title="Filtres">☰<span class="badge-count" id="filter-count" style="display:none;">0</span></button>
       <button class="icon-btn" id="refresh-btn" title="Actualiser">⟳</button>
     </div>
@@ -277,6 +299,7 @@
   <div class="tabs" id="tab-row">
     <button class="tab active" data-tab="trending">En tendance</button>
     <button class="tab" data-tab="new">Nouvelles paires</button>
+    <button class="tab" data-tab="watchlist">★ Watchlist</button>
   </div>
 
   <div class="platform-row" id="platform-row"></div>
@@ -409,14 +432,68 @@
   </div>
 </div>
 
+<div class="sheet" id="alert-sheet">
+  <div class="sheet-handle"></div>
+  <h2>Alertes</h2>
+  <p class="swap-hint" style="margin-top:-6px;">Fonctionne tant que cet onglet Hoodlum reste ouvert (même en arrière-plan) — pas besoin d'app.</p>
+
+  <div class="field">
+    <label style="display:flex;align-items:center;justify-content:space-between;">
+      <span>Activer les alertes</span>
+      <input type="checkbox" id="a-enabled" style="width:20px;height:20px;">
+    </label>
+  </div>
+
+  <div class="two-col">
+    <div class="field">
+      <label>Liquidité min</label>
+      <select id="a-liquidity">
+        <option value="0">Aucune</option>
+        <option value="5000" selected>5 000 $</option>
+        <option value="25000">25 000 $</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Variation 1h min</label>
+      <select id="a-change">
+        <option value="0" selected>Aucune</option>
+        <option value="20">+20%</option>
+        <option value="50">+50%</option>
+        <option value="100">+100%</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="field">
+    <label style="display:flex;align-items:center;justify-content:space-between;">
+      <span>Mint désactivé requis</span>
+      <input type="checkbox" id="a-mint" style="width:20px;height:20px;">
+    </label>
+  </div>
+  <div class="field">
+    <label style="display:flex;align-items:center;justify-content:space-between;">
+      <span>LP verrouillée ≥ 80% requise</span>
+      <input type="checkbox" id="a-lp" style="width:20px;height:20px;">
+    </label>
+  </div>
+
+  <div class="sheet-actions">
+    <button class="btn ghost" id="a-close">Fermer</button>
+    <button class="btn primary" id="a-save">Enregistrer</button>
+  </div>
+</div>
+
 <div class="chart-modal" id="chart-modal">
   <div class="chart-modal-header">
     <div class="chart-modal-title" id="chart-modal-title">Graphique</div>
     <button class="icon-btn" id="chart-modal-close">✕</button>
   </div>
+  <div class="score-panel" id="score-panel"></div>
   <div class="chart-modal-body">
+    <div class="chart-loading" id="chart-loading">Chargement du graphique…</div>
     <iframe id="chart-modal-iframe" src="" title="Graphique du token" sandbox="allow-scripts allow-same-origin allow-forms" allow="clipboard-write"></iframe>
     <div id="jupiter-plugin-wrap" style="display:none;">
+      <p class="swap-hint">Swap Jupiter — connecte ton wallet ci-dessous</p>
       <div id="jupiter-plugin"></div>
     </div>
   </div>
@@ -449,6 +526,16 @@ window.addEventListener('error', function(e){
   const REFRESH_MS = 12000;
   const PALETTE = ['#A855F7', '#22D3EE', '#F472B6', '#34D399', '#FBBF24', '#818CF8'];
 
+  function loadJSON(key, fallback){
+    try{
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    }catch(err){ return fallback; }
+  }
+  function saveJSON(key, value){
+    try{ localStorage.setItem(key, JSON.stringify(value)); }catch(err){ /* storage unavailable, ignore */ }
+  }
+
   const state = {
     network: 'robinhood',
     tab: 'trending',
@@ -463,7 +550,12 @@ window.addEventListener('error', function(e){
     imageCache: {},
     securityCache: {},
     seenIds: {},
-    sheetOpen: false
+    sheetOpen: false,
+    watchlist: loadJSON('hoodlum_watchlist', []),
+    watchlistPools: null,
+    watchlistLoading: false,
+    alerts: loadJSON('hoodlum_alerts', { enabled: false, minLiquidity: 5000, minChange1h: 0, requireMintSafe: false, requireLpLocked: false }),
+    notifiedIds: new Set()
   };
 
   const els = {
@@ -497,7 +589,19 @@ window.addEventListener('error', function(e){
     chartModalIframe: document.getElementById('chart-modal-iframe'),
     chartModalExternal: document.getElementById('chart-modal-external'),
     chartModalClose: document.getElementById('chart-modal-close'),
-    jupiterWrap: document.getElementById('jupiter-plugin-wrap')
+    chartLoading: document.getElementById('chart-loading'),
+    jupiterWrap: document.getElementById('jupiter-plugin-wrap'),
+    scorePanel: document.getElementById('score-panel'),
+    alertBtn: document.getElementById('alert-btn'),
+    alertCount: document.getElementById('alert-count'),
+    alertSheet: document.getElementById('alert-sheet'),
+    aEnabled: document.getElementById('a-enabled'),
+    aLiquidity: document.getElementById('a-liquidity'),
+    aChange: document.getElementById('a-change'),
+    aMint: document.getElementById('a-mint'),
+    aLp: document.getElementById('a-lp'),
+    aClose: document.getElementById('a-close'),
+    aSave: document.getElementById('a-save')
   };
 
   function escapeHTML(str){
@@ -559,7 +663,7 @@ window.addEventListener('error', function(e){
     return dexId.replace(/[_-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
 
-  function parsePool(p){
+  function parsePool(p, network){
     const a = p.attributes || {};
     const parts = (a.name || '? / ?').split(' / ');
     const pc = a.price_change_percentage || {};
@@ -570,6 +674,7 @@ window.addEventListener('error', function(e){
     const baseAddress = baseTokenId.indexOf('_') !== -1 ? baseTokenId.slice(baseTokenId.indexOf('_') + 1) : baseTokenId;
     return {
       id: p.id,
+      network: network,
       address: a.address || '',
       baseAddress: baseAddress,
       dexId: dexId,
@@ -609,7 +714,14 @@ window.addEventListener('error', function(e){
     const endpoint = tab === 'trending' ? 'trending_pools' : 'new_pools';
     const url = GT_BASE + '/networks/' + state.network + '/' + endpoint;
     const json = await fetchJSON(url);
-    return (json.data || []).map(parsePool);
+    return (json.data || []).map(function(item){ return parsePool(item, state.network); });
+  }
+
+  async function fetchSinglePool(network, address){
+    const url = GT_BASE + '/networks/' + network + '/pools/' + address;
+    const json = await fetchJSON(url);
+    if(!json || !json.data) return null;
+    return parsePool(json.data, network);
   }
 
   async function fetchImagesFor(network, addresses){
@@ -684,6 +796,52 @@ window.addEventListener('error', function(e){
     await Promise.allSettled([ fetchImagesFor(network, batch), fetchSecurityFor(network, batch) ]);
   }
 
+  function isWatched(network, address){
+    return state.watchlist.some(function(w){ return w.network === network && w.address === address; });
+  }
+
+  function toggleWatch(network, address, baseAddress, baseLabel, quoteLabel){
+    const idx = state.watchlist.findIndex(function(w){ return w.network === network && w.address === address; });
+    if(idx !== -1){
+      state.watchlist.splice(idx, 1);
+    } else {
+      state.watchlist.push({ network: network, address: address, baseAddress: baseAddress, base: baseLabel, quote: quoteLabel });
+    }
+    saveJSON('hoodlum_watchlist', state.watchlist);
+  }
+
+  async function refreshWatchlist(silent){
+    if(state.refreshing) return;
+    state.refreshing = true;
+    if(!silent) state.watchlistLoading = true;
+    render();
+    try{
+      const results = await Promise.allSettled(
+        state.watchlist.map(function(w){ return fetchSinglePool(w.network, w.address); })
+      );
+      const pools = results
+        .filter(function(r){ return r.status === 'fulfilled' && r.value; })
+        .map(function(r){ return r.value; });
+      state.watchlistPools = pools;
+      state.error.watchlist = null;
+      state.lastUpdated.watchlist = new Date();
+      const byNetwork = {};
+      pools.forEach(function(p){
+        if(!byNetwork[p.network]) byNetwork[p.network] = [];
+        byNetwork[p.network].push(p);
+      });
+      const enrichJobs = Object.keys(byNetwork).map(function(net){ return enrichPools(net, byNetwork[net]); });
+      Promise.allSettled(enrichJobs).then(render);
+    }catch(err){
+      console.error('Hoodlum watchlist error:', err);
+      state.error.watchlist = (err && err.message) ? err.message : 'Erreur réseau';
+    }
+    state.watchlistLoading = false;
+    state.refreshing = false;
+    render();
+  }
+
+
   async function refresh(tab, silent){
     if(state.refreshing) return;
     state.refreshing = true;
@@ -700,7 +858,7 @@ window.addEventListener('error', function(e){
       state.rawCount[tab] = pools.length;
       state.error[tab] = null;
       state.lastUpdated[tab] = new Date();
-      enrichPools(network, pools).then(render);
+      enrichPools(network, pools).then(function(){ checkAlerts(pools); render(); });
     }catch(err){
       console.error('Hoodlum fetch error:', err);
       state.error[tab] = (err && err.message) ? err.message : 'Erreur réseau';
@@ -748,7 +906,7 @@ window.addEventListener('error', function(e){
   }
 
   function avatarHTML(pool){
-    const key = pool.baseAddress ? state.network + ':' + pool.baseAddress.toLowerCase() : '';
+    const key = pool.baseAddress ? pool.network + ':' + pool.baseAddress.toLowerCase() : '';
     const img = key ? state.imageCache[key] : null;
     if(img){
       return '<img class="avatar" src="' + img + '" alt="" onerror="this.outerHTML=\'' +
@@ -763,6 +921,84 @@ window.addEventListener('error', function(e){
     return '<div class="avatar-fallback" style="background:' + color + '">' + letter + '</div>';
   }
 
+  function computeScore(pool, sec){
+    // Each part is 0-100; "null" means unknown (drawn as a low-confidence stub on the radar).
+    let liq;
+    if(pool.liquidity >= 50000) liq = 100;
+    else if(pool.liquidity >= 5000) liq = 55;
+    else liq = 15;
+
+    let mint = null;
+    if(sec) mint = sec.mintable ? 10 : 100;
+
+    let lp = null;
+    if(sec && sec.lpLockedPct !== null) lp = Math.min(100, sec.lpLockedPct);
+
+    let buy = null;
+    const bp = buyPressure(pool.txH1);
+    if(bp !== null) buy = bp;
+
+    let holders = null;
+    if(sec && sec.holderCount !== null){
+      holders = sec.holderCount >= 200 ? 100 : sec.holderCount >= 50 ? 60 : 20;
+    }
+
+    const parts = { liq: liq, mint: mint, lp: lp, buy: buy, holders: holders };
+    const known = Object.keys(parts).filter(function(k){ return parts[k] !== null; });
+    const total = known.length
+      ? Math.round(known.reduce(function(s, k){ return s + parts[k]; }, 0) / known.length)
+      : null;
+    return { total: total, parts: parts, knownCount: known.length };
+  }
+
+  function scoreTierClass(total){
+    if(total === null) return 'risk-mid';
+    if(total >= 70) return 'risk-low';
+    if(total >= 40) return 'risk-mid';
+    return 'risk-high';
+  }
+
+  function radarSVG(parts){
+    const axes = [
+      { key: 'liq', label: 'Liquidité' },
+      { key: 'mint', label: 'Mint' },
+      { key: 'lp', label: 'LP' },
+      { key: 'buy', label: 'Achats' },
+      { key: 'holders', label: 'Holders' }
+    ];
+    const cx = 100, cy = 100, r = 72;
+    const angle = function(i){ return (Math.PI * 2 * i / axes.length) - Math.PI / 2; };
+    const pointAt = function(i, value){
+      const a = angle(i);
+      const dist = r * (value / 100);
+      return [cx + dist * Math.cos(a), cy + dist * Math.sin(a)];
+    };
+    let gridRings = '';
+    [0.33, 0.66, 1].forEach(function(f){
+      const pts = axes.map(function(_, i){ return pointAt(i, 100 * f).join(','); }).join(' ');
+      gridRings += '<polygon points="' + pts + '" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>';
+    });
+    let spokes = '';
+    let labels = '';
+    axes.forEach(function(ax, i){
+      const pt = pointAt(i, 100);
+      spokes += '<line x1="' + cx + '" y1="' + cy + '" x2="' + pt[0] + '" y2="' + pt[1] + '" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>';
+      const lp2 = pointAt(i, 122);
+      labels += '<text x="' + lp2[0] + '" y="' + lp2[1] + '" fill="#8B8B9E" font-size="9" font-family="IBM Plex Mono, monospace" text-anchor="middle" dominant-baseline="middle">' + ax.label + '</text>';
+    });
+    const dataPts = axes.map(function(ax, i){
+      const v = (ax.key in parts && parts[ax.key] !== null) ? parts[ax.key] : 12;
+      return pointAt(i, v).join(',');
+    }).join(' ');
+    return (
+      '<svg viewBox="0 0 200 200" width="180" height="180">' +
+        gridRings + spokes +
+        '<polygon points="' + dataPts + '" fill="rgba(168,85,247,0.28)" stroke="#A855F7" stroke-width="2"/>' +
+        labels +
+      '</svg>'
+    );
+  }
+
   function rowHTML(pool, isNew){
     const risk = riskBadge(pool.liquidity);
     const bp = buyPressure(pool.txH1);
@@ -770,11 +1006,10 @@ window.addEventListener('error', function(e){
     const changeSign = pool.change24h >= 0 ? '+' : '';
     const change1hCls = pool.change1h >= 0 ? 'pos' : 'neg';
     const change1hSign = pool.change1h >= 0 ? '+' : '';
-    const href = pool.address
-      ? 'https://www.geckoterminal.com/' + state.network + '/pools/' + pool.address
-      : '#';
-    const secKey = pool.baseAddress ? state.network + ':' + pool.baseAddress.toLowerCase() : '';
+    const secKey = pool.baseAddress ? pool.network + ':' + pool.baseAddress.toLowerCase() : '';
     const sec = secKey ? state.securityCache[secKey] : null;
+    const score = computeScore(pool, sec);
+    const watched = isWatched(pool.network, pool.address);
 
     let secTags = '';
     if(sec){
@@ -795,13 +1030,16 @@ window.addEventListener('error', function(e){
     }
 
     return (
-      '<div class="row' + (isNew ? ' just-in' : '') + '" data-pool-id="' + escapeHTML(pool.id) + '" data-network="' + escapeHTML(state.network) + '" data-address="' + escapeHTML(pool.address) + '" data-base-address="' + escapeHTML(pool.baseAddress) + '" data-pair="' + escapeHTML(pool.base) + ' / ' + escapeHTML(pool.quote) + '">' +
+      '<div class="row' + (isNew ? ' just-in' : '') + '" data-pool-id="' + escapeHTML(pool.id) + '" data-network="' + escapeHTML(pool.network) + '" data-address="' + escapeHTML(pool.address) + '" data-base-address="' + escapeHTML(pool.baseAddress) + '" data-pair="' + escapeHTML(pool.base) + ' / ' + escapeHTML(pool.quote) + '">' +
         '<div class="row-top">' +
           avatarHTML(pool) +
           '<div class="row-main">' +
             '<div class="row-main-top">' +
               '<div class="pair">' + escapeHTML(pool.base) + ' <span class="quote">/ ' + escapeHTML(pool.quote) + '</span></div>' +
-              '<div class="price">$' + formatPrice(pool.priceUsd) + '</div>' +
+              '<div class="row-top-right">' +
+                '<div class="price">$' + formatPrice(pool.priceUsd) + '</div>' +
+                '<button class="star-btn' + (watched ? ' active' : '') + '" data-star-network="' + escapeHTML(pool.network) + '" data-star-address="' + escapeHTML(pool.address) + '" data-star-base="' + escapeHTML(pool.baseAddress) + '" data-star-base-label="' + escapeHTML(pool.base) + '" data-star-quote="' + escapeHTML(pool.quote) + '">' + (watched ? '★' : '☆') + '</button>' +
+              '</div>' +
             '</div>' +
             '<div class="row-sub">' +
               '<span class="change ' + changeCls + '">' + changeSign + pool.change24h.toFixed(1) + '% (24h)</span>' +
@@ -811,8 +1049,10 @@ window.addEventListener('error', function(e){
           '</div>' +
         '</div>' +
         '<div class="row-tags">' +
+          '<span class="tag network">' + escapeHTML(NETWORKS[pool.network] ? NETWORKS[pool.network].label : pool.network) + '</span>' +
           '<span class="tag platform">' + escapeHTML(formatPlatform(pool.dexId)) + '</span>' +
           '<span class="tag ' + risk.cls + '">' + risk.label + '</span>' +
+          '<span class="tag ' + scoreTierClass(score.total) + '">Score ' + (score.total === null ? '—' : score.total + '/100') + '</span>' +
           (bp !== null ? '<span class="tag bp">' + bp + '% achats (1h)</span>' : '') +
           secTags +
         '</div>' +
@@ -856,6 +1096,13 @@ window.addEventListener('error', function(e){
     els.networkTabs.forEach(function(t){ t.classList.toggle('active', t.dataset.network === state.network); });
     els.networkLabel.textContent = NETWORKS[state.network].label;
     els.tabs.forEach(function(t){ t.classList.toggle('active', t.dataset.tab === state.tab); });
+
+    if(state.tab === 'watchlist'){
+      renderWatchlist();
+      return;
+    }
+    document.getElementById('network-row').style.display = '';
+    els.platformRow.style.display = '';
 
     const count = activeFilterCount();
     els.filterCount.style.display = count > 0 ? 'flex' : 'none';
@@ -902,7 +1149,7 @@ window.addEventListener('error', function(e){
       if(f.maxFdv !== null && (p.fdv === null || p.fdv > f.maxFdv)) return false;
       if(f.minBuys1h !== null && (p.txH1.buys || 0) < f.minBuys1h) return false;
       if(f.minHolders !== null){
-        const secKey = p.baseAddress ? state.network + ':' + p.baseAddress.toLowerCase() : '';
+        const secKey = p.baseAddress ? p.network + ':' + p.baseAddress.toLowerCase() : '';
         const sec = secKey ? state.securityCache[secKey] : null;
         if(!sec || sec.holderCount === null || sec.holderCount < f.minHolders) return false;
       }
@@ -935,6 +1182,41 @@ window.addEventListener('error', function(e){
     els.list.innerHTML = filtered.map(function(p){ return rowHTML(p, !!p._isNew); }).join('');
   }
 
+  function renderWatchlist(){
+    document.getElementById('network-row').style.display = 'none';
+    els.platformRow.style.display = 'none';
+    els.filterCount.style.display = 'none';
+
+    els.updatedAt.textContent = state.lastUpdated.watchlist
+      ? ('maj ' + state.lastUpdated.watchlist.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
+      : (state.watchlistLoading ? 'chargement…' : '—');
+
+    if(state.error && state.error.watchlist){
+      els.status.className = 'status error';
+      els.status.innerHTML = 'Impossible de charger la watchlist (' + escapeHTML(state.error.watchlist) + ').' +
+        '<button id="retry-btn">Réessayer</button>';
+      const retryBtn = document.getElementById('retry-btn');
+      if(retryBtn) retryBtn.onclick = function(){ refreshWatchlist(false); };
+    } else {
+      els.status.className = 'status';
+      els.status.textContent = '';
+    }
+
+    if(state.watchlist.length === 0){
+      els.list.innerHTML = '<div class="empty">Ta watchlist est vide. Touche l\'étoile ☆ sur une paire (Robinhood Chain ou Solana) pour l\'ajouter ici — les deux chaînes apparaissent ensemble dans cette liste.</div>';
+      return;
+    }
+
+    if(state.watchlistLoading && !state.watchlistPools){
+      els.list.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
+      return;
+    }
+
+    const pools = state.watchlistPools || [];
+    const sorted = pools.slice().sort(function(a, b){ return b.change1h - a.change1h; });
+    els.list.innerHTML = sorted.map(function(p){ return rowHTML(p, false); }).join('');
+  }
+
   // network switcher events
   els.networkTabs.forEach(function(t){
     t.addEventListener('click', function(){
@@ -947,7 +1229,11 @@ window.addEventListener('error', function(e){
     t.addEventListener('click', function(){
       state.tab = t.dataset.tab;
       render();
-      if(!state.pools[state.tab]) refresh(state.tab, false);
+      if(state.tab === 'watchlist'){
+        if(state.watchlistPools === null) refreshWatchlist(false);
+      } else if(!state.pools[state.tab]){
+        refresh(state.tab, false);
+      }
     });
   });
 
@@ -994,12 +1280,74 @@ window.addEventListener('error', function(e){
   });
   els.fApply.addEventListener('click', closeSheet);
 
+  // alert sheet
+  function refreshAlertBadge(){
+    els.alertCount.style.display = state.alerts.enabled ? 'flex' : 'none';
+  }
+  function openAlertSheet(){
+    els.aEnabled.checked = state.alerts.enabled;
+    els.aLiquidity.value = String(state.alerts.minLiquidity);
+    els.aChange.value = String(state.alerts.minChange1h);
+    els.aMint.checked = state.alerts.requireMintSafe;
+    els.aLp.checked = state.alerts.requireLpLocked;
+    els.backdrop.classList.add('open');
+    els.alertSheet.classList.add('open');
+  }
+  function closeAlertSheet(){
+    els.backdrop.classList.remove('open');
+    els.alertSheet.classList.remove('open');
+  }
+  els.alertBtn.addEventListener('click', openAlertSheet);
+  els.aClose.addEventListener('click', closeAlertSheet);
+  els.aSave.addEventListener('click', function(){
+    const wantsEnabled = els.aEnabled.checked;
+    function commit(granted){
+      state.alerts = {
+        enabled: wantsEnabled && granted,
+        minLiquidity: parseInt(els.aLiquidity.value, 10) || 0,
+        minChange1h: parseFloat(els.aChange.value) || 0,
+        requireMintSafe: els.aMint.checked,
+        requireLpLocked: els.aLp.checked
+      };
+      saveJSON('hoodlum_alerts', state.alerts);
+      refreshAlertBadge();
+      closeAlertSheet();
+    }
+    if(wantsEnabled && 'Notification' in window && Notification.permission !== 'granted'){
+      Notification.requestPermission().then(function(perm){ commit(perm === 'granted'); });
+    } else {
+      commit('Notification' in window ? Notification.permission === 'granted' || !wantsEnabled : false);
+    }
+  });
+
+  function checkAlerts(pools){
+    if(!state.alerts.enabled || !('Notification' in window) || Notification.permission !== 'granted') return;
+    pools.forEach(function(p){
+      if(!p._isNew) return;
+      if(state.notifiedIds.has(p.network + ':' + p.id)) return;
+      if(p.liquidity < state.alerts.minLiquidity) return;
+      if(p.change1h < state.alerts.minChange1h) return;
+      const secKey = p.baseAddress ? p.network + ':' + p.baseAddress.toLowerCase() : '';
+      const sec = secKey ? state.securityCache[secKey] : null;
+      if(state.alerts.requireMintSafe && (!sec || sec.mintable)) return;
+      if(state.alerts.requireLpLocked && (!sec || sec.lpLockedPct === null || sec.lpLockedPct < 80)) return;
+      state.notifiedIds.add(p.network + ':' + p.id);
+      try{
+        new Notification('Hoodlum — ' + p.base + ' / ' + p.quote, {
+          body: NETWORKS[p.network].label + ' · +' + p.change1h.toFixed(0) + '% (1h) · Liq ' + formatUSD(p.liquidity)
+        });
+      }catch(err){ console.warn('Hoodlum: notification impossible', err); }
+    });
+  }
+
   // chart modal
   function openChartModal(network, address, baseAddress, pairLabel){
     const chartUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address +
       '?embed=1&info=1&swaps=0&light_chart=0&chart_type=price&resolution=15m&bg_color=0A0A10';
     const externalUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address;
     els.chartModalTitle.textContent = pairLabel;
+    els.chartLoading.classList.remove('hidden');
+    els.chartModalIframe.onload = function(){ els.chartLoading.classList.add('hidden'); };
     els.chartModalIframe.src = chartUrl;
     els.chartModalExternal.href = externalUrl;
     els.chartModal.classList.add('open');
@@ -1028,20 +1376,38 @@ window.addEventListener('error', function(e){
     els.chartModalIframe.src = ''; // stop loading/refreshing in the background
   }
   els.list.addEventListener('click', function(e){
+    const starBtn = e.target.closest('.star-btn');
+    if(starBtn){
+      e.stopPropagation();
+      toggleWatch(starBtn.dataset.starNetwork, starBtn.dataset.starAddress, starBtn.dataset.starBase, starBtn.dataset.starBaseLabel, starBtn.dataset.starQuote);
+      render();
+      return;
+    }
     const row = e.target.closest('.row');
     if(!row) return;
     const address = row.dataset.address;
     if(!address) return;
+    const pool = (state.tab === 'watchlist' ? state.watchlistPools : state.pools[state.tab]).find(function(p){ return p.address === address && p.network === row.dataset.network; });
+    const sec = pool && pool.baseAddress ? state.securityCache[pool.network + ':' + pool.baseAddress.toLowerCase()] : null;
+    const score = pool ? computeScore(pool, sec) : { total: null, parts: {} };
+    els.scorePanel.innerHTML =
+      radarSVG(score.parts) +
+      '<div class="score-panel-text">' +
+        '<div class="score-panel-total">' + (score.total === null ? '—' : score.total + '/100') + '</div>' +
+        '<div class="score-panel-caption">Score indicatif basé sur liquidité, mint, LP verrouillée, pression d\'achat et holders — pas un conseil, juste le détail visible plutôt qu\'un verdict caché.</div>' +
+      '</div>';
     openChartModal(row.dataset.network, address, row.dataset.baseAddress, row.dataset.pair);
   });
   els.chartModalClose.addEventListener('click', closeChartModal);
 
   setInterval(function(){
     if(document.visibilityState === 'visible'){
-      refresh(state.tab, true);
+      if(state.tab === 'watchlist') refreshWatchlist(true);
+      else refresh(state.tab, true);
     }
   }, REFRESH_MS);
 
+  refreshAlertBadge();
   refresh('trending', false);
 })();
 </script>
