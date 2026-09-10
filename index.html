@@ -139,6 +139,7 @@
   .row{
     display:block; background:var(--surface); border:1px solid var(--border);
     border-radius:16px; padding:13px 14px; text-decoration:none; color:var(--text);
+    cursor:pointer;
     transition:border-color .15s ease, background .15s ease;
   }
   .row:active{background:var(--surface-2);}
@@ -227,6 +228,28 @@
   }
   .btn.primary{ background:var(--gradient); color:#0A0A10; }
   .btn.ghost{ background:var(--surface); color:var(--text); border:1px solid var(--border); }
+
+  /* chart modal */
+  .chart-modal{
+    position:fixed; inset:0; z-index:40;
+    background:rgba(0,0,0,0.75);
+    display:none; flex-direction:column;
+    padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  }
+  .chart-modal.open{ display:flex; }
+  .chart-modal-header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 16px; background:var(--surface-solid); border-bottom:1px solid var(--border);
+  }
+  .chart-modal-title{ font-weight:700; font-size:15px; }
+  .chart-modal-body{ flex:1; background:#0A0A10; }
+  .chart-modal-body iframe{ width:100%; height:100%; border:0; }
+  .chart-modal-footer{
+    padding:12px 16px; background:var(--surface-solid); border-top:1px solid var(--border);
+  }
+  .chart-modal-footer a{
+    color:var(--cyan); text-decoration:none; font-size:13px; font-weight:600;
+  }
 </style>
 </head>
 <body>
@@ -381,6 +404,19 @@
   </div>
 </div>
 
+<div class="chart-modal" id="chart-modal">
+  <div class="chart-modal-header">
+    <div class="chart-modal-title" id="chart-modal-title">Graphique</div>
+    <button class="icon-btn" id="chart-modal-close">✕</button>
+  </div>
+  <div class="chart-modal-body">
+    <iframe id="chart-modal-iframe" src="" title="Graphique du token" allow="clipboard-write"></iframe>
+  </div>
+  <div class="chart-modal-footer">
+    <a id="chart-modal-external" href="#" target="_blank" rel="noopener">Ouvrir sur GeckoTerminal (trading complet) ↗</a>
+  </div>
+</div>
+
 <script>
 window.addEventListener('error', function(e){
   var list = document.getElementById('list');
@@ -447,7 +483,12 @@ window.addEventListener('error', function(e){
     fHolders: document.getElementById('f-holders'),
     fSort: document.getElementById('f-sort'),
     fReset: document.getElementById('f-reset'),
-    fApply: document.getElementById('f-apply')
+    fApply: document.getElementById('f-apply'),
+    chartModal: document.getElementById('chart-modal'),
+    chartModalTitle: document.getElementById('chart-modal-title'),
+    chartModalIframe: document.getElementById('chart-modal-iframe'),
+    chartModalExternal: document.getElementById('chart-modal-external'),
+    chartModalClose: document.getElementById('chart-modal-close')
   };
 
   function escapeHTML(str){
@@ -745,7 +786,7 @@ window.addEventListener('error', function(e){
     }
 
     return (
-      '<a class="row' + (isNew ? ' just-in' : '') + '" data-pool-id="' + escapeHTML(pool.id) + '" href="' + href + '" target="_blank" rel="noopener">' +
+      '<div class="row' + (isNew ? ' just-in' : '') + '" data-pool-id="' + escapeHTML(pool.id) + '" data-network="' + escapeHTML(state.network) + '" data-address="' + escapeHTML(pool.address) + '" data-pair="' + escapeHTML(pool.base) + ' / ' + escapeHTML(pool.quote) + '">' +
         '<div class="row-top">' +
           avatarHTML(pool) +
           '<div class="row-main">' +
@@ -766,7 +807,7 @@ window.addEventListener('error', function(e){
           (bp !== null ? '<span class="tag bp">' + bp + '% achats (1h)</span>' : '') +
           secTags +
         '</div>' +
-      '</a>'
+      '</div>'
     );
   }
 
@@ -943,6 +984,29 @@ window.addEventListener('error', function(e){
     render();
   });
   els.fApply.addEventListener('click', closeSheet);
+
+  // chart modal
+  function openChartModal(network, address, pairLabel){
+    const chartUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address +
+      '?embed=1&info=0&swaps=0&light_chart=0&chart_type=price&resolution=15m';
+    const externalUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address;
+    els.chartModalTitle.textContent = pairLabel;
+    els.chartModalIframe.src = chartUrl;
+    els.chartModalExternal.href = externalUrl;
+    els.chartModal.classList.add('open');
+  }
+  function closeChartModal(){
+    els.chartModal.classList.remove('open');
+    els.chartModalIframe.src = ''; // stop loading/refreshing in the background
+  }
+  els.list.addEventListener('click', function(e){
+    const row = e.target.closest('.row');
+    if(!row) return;
+    const address = row.dataset.address;
+    if(!address) return;
+    openChartModal(row.dataset.network, address, row.dataset.pair);
+  });
+  els.chartModalClose.addEventListener('click', closeChartModal);
 
   setInterval(function(){
     if(document.visibilityState === 'visible'){
