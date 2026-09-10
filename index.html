@@ -290,6 +290,8 @@
     padding:9px 4px; border-radius:10px; font-family:var(--mono); font-weight:600; font-size:13px; cursor:pointer;
   }
   .paper-buy-btn:active{ background:var(--surface-2); }
+  .sell-row{ display:flex; gap:6px; margin-top:10px; }
+  .sell-row .paper-buy-btn{ font-size:12px; padding:8px 4px; }
   .paper-toast{
     position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
     background:var(--gradient); color:#0A0A10; font-weight:700; font-size:13px;
@@ -521,11 +523,11 @@
       <div id="jupiter-plugin"></div>
     </div>
     <div class="paper-buy-row" id="paper-buy-row">
-      <span class="paper-buy-label">Simulation d'achat (faux argent) :</span>
-      <button class="paper-buy-btn" data-amount="25">25$</button>
-      <button class="paper-buy-btn" data-amount="50">50$</button>
-      <button class="paper-buy-btn" data-amount="100">100$</button>
-      <button class="paper-buy-btn" data-amount="250">250$</button>
+      <span class="paper-buy-label" id="paper-cash-label">Solde fictif : 1 000 $</span>
+      <button class="paper-buy-btn" data-pct="0.1">Acheter 10%</button>
+      <button class="paper-buy-btn" data-pct="0.25">Acheter 25%</button>
+      <button class="paper-buy-btn" data-pct="0.5">Acheter 50%</button>
+      <button class="paper-buy-btn" data-pct="1">Acheter tout</button>
     </div>
   </div>
   <div class="chart-modal-footer">
@@ -587,7 +589,7 @@ window.addEventListener('error', function(e){
     watchlistLoading: false,
     alerts: loadJSON('hoodlum_alerts', { enabled: false, minLiquidity: 5000, minChange1h: 0, requireMintSafe: false, requireLpLocked: false }),
     notifiedIds: new Set(),
-    paper: loadJSON('hoodlum_paper', { cash: 1000, positions: [] }),
+    paper: loadJSON('hoodlum_paper', { cash: 1000, positions: [], realizedPnl: 0 }),
     paperLoading: false,
     currentModalPool: null
   };
@@ -910,16 +912,17 @@ window.addEventListener('error', function(e){
     setTimeout(function(){ els.paperToast.classList.remove('show'); }, 2200);
   }
 
-  function paperBuy(pool, usdAmount){
-    if(usdAmount > state.paper.cash){
-      showToast('Solde fictif insuffisant (' + formatUSD(state.paper.cash) + ' dispo)');
-      return;
-    }
-    if(!pool.priceUsd){
+  function paperBuy(pool, pct){
+    if(!pool || !pool.priceUsd){
       showToast('Prix indisponible, achat annulé');
       return;
     }
-    state.paper.cash -= usdAmount;
+    const usdAmount = Math.floor(state.paper.cash * pct * 100) / 100;
+    if(usdAmount < 0.01){
+      showToast('Solde fictif insuffisant');
+      return;
+    }
+    state.paper.cash = Math.round((state.paper.cash - usdAmount) * 100) / 100;
     state.paper.positions.push({
       id: pool.network + ':' + pool.address + ':' + Date.now(),
       network: pool.network,
@@ -933,19 +936,36 @@ window.addEventListener('error', function(e){
       openedAt: Date.now()
     });
     saveJSON('hoodlum_paper', state.paper);
-    showToast('Achat simulé : ' + formatUSD(usdAmount) + ' de ' + pool.base);
+    showToast('✓ Acheté ' + formatUSD(usdAmount) + ' de ' + pool.base + ' — solde ' + formatUSD(state.paper.cash));
+    updatePaperBuyPanel();
   }
 
-  function paperSell(positionId, currentPrice){
+  function paperSell(positionId, pct, currentPrice){
     const idx = state.paper.positions.findIndex(function(p){ return p.id === positionId; });
     if(idx === -1) return;
     const pos = state.paper.positions[idx];
-    const value = currentPrice ? pos.tokenQty * currentPrice : pos.usdSpent;
-    state.paper.cash += value;
-    state.paper.positions.splice(idx, 1);
+    const sellQty = pos.tokenQty * pct;
+    const costBasis = pos.usdSpent * pct;
+    const price = currentPrice || pos.entryPrice;
+    const proceeds = sellQty * price;
+    const realized = proceeds - costBasis;
+    state.paper.cash = Math.round((state.paper.cash + proceeds) * 100) / 100;
+    state.paper.realizedPnl = Math.round((state.paper.realizedPnl + realized) * 100) / 100;
+    if(pct >= 0.999){
+      state.paper.positions.splice(idx, 1);
+    } else {
+      pos.tokenQty -= sellQty;
+      pos.usdSpent -= costBasis;
+    }
     saveJSON('hoodlum_paper', state.paper);
-    showToast('Vente simulée : ' + formatUSD(value) + ' récupérés');
+    const sign = realized >= 0 ? '+' : '';
+    showToast('✓ Vendu ' + formatUSD(proceeds) + ' (' + sign + formatUSD(realized) + ')');
     if(state.tab === 'paper') refreshPaper(false);
+  }
+
+  function updatePaperBuyPanel(){
+    const label = document.getElementById('paper-cash-label');
+    if(label) label.textContent = 'Solde fictif : ' + formatUSD(state.paper.cash);
   }
 
   async function refreshPaper(silent){
@@ -1333,12 +1353,14 @@ window.addEventListener('error', function(e){
     els.status.textContent = '';
     els.status.className = 'status';
 
-    let totalValue = state.paper.cash;
+    let positionsValue = 0;
+    let unrealizedPnl = 0;
     const rows = state.paper.positions.map(function(pos){
       const current = pos._currentPrice || null;
       const value = current ? pos.tokenQty * current : pos.usdSpent;
-      totalValue += value;
+      positionsValue += value;
       const pnl = value - pos.usdSpent;
+      unrealizedPnl += pnl;
       const pnlPct = pos.usdSpent ? (pnl / pos.usdSpent) * 100 : 0;
       const pnlCls = pnl >= 0 ? 'pos' : 'neg';
       const pnlSign = pnl >= 0 ? '+' : '';
@@ -1352,24 +1374,34 @@ window.addEventListener('error', function(e){
             '<span class="change ' + pnlCls + '">' + pnlSign + formatUSD(pnl) + ' (' + pnlSign + pnlPct.toFixed(1) + '%)</span>' +
             '<span class="meta">Entrée ' + formatUSD(pos.usdSpent) + ' · ' + escapeHTML(NETWORKS[pos.network].label) + '</span>' +
           '</div>' +
-          '<button class="btn ghost" style="margin-top:10px;" data-sell-id="' + escapeHTML(pos.id) + '" data-sell-price="' + (current || '') + '">Vendre (simulation)</button>' +
+          '<div class="sell-row">' +
+            '<button class="paper-buy-btn" data-sell-id="' + escapeHTML(pos.id) + '" data-sell-price="' + (current || '') + '" data-sell-pct="0.25">Vendre 25%</button>' +
+            '<button class="paper-buy-btn" data-sell-id="' + escapeHTML(pos.id) + '" data-sell-price="' + (current || '') + '" data-sell-pct="0.5">Vendre 50%</button>' +
+            '<button class="paper-buy-btn" data-sell-id="' + escapeHTML(pos.id) + '" data-sell-price="' + (current || '') + '" data-sell-pct="1">Tout vendre</button>' +
+          '</div>' +
         '</div>'
       );
     }).join('');
 
     els.updatedAt.textContent = state.paperLoading ? 'chargement…' : '—';
 
+    const totalValue = state.paper.cash + positionsValue;
+    const totalPnl = unrealizedPnl + state.paper.realizedPnl;
+    const totalPnlCls = totalPnl >= 0 ? 'pos' : 'neg';
+    const totalPnlSign = totalPnl >= 0 ? '+' : '';
+
     els.list.innerHTML =
       '<div class="row" style="text-align:center;">' +
-        '<div class="score-panel-total">' + formatUSD(totalValue) + '</div>' +
-        '<div class="score-panel-caption">Valeur totale simulée · ' + formatUSD(state.paper.cash) + ' en liquide · ' + state.paper.positions.length + ' position(s) ouverte(s)</div>' +
+        '<div class="score-panel-total" style="font-size:26px;">' + formatUSD(totalValue) + '</div>' +
+        '<div class="change ' + totalPnlCls + '" style="display:inline-block;margin-top:6px;">' + totalPnlSign + formatUSD(totalPnl) + ' au total (réalisé ' + (state.paper.realizedPnl >= 0 ? '+' : '') + formatUSD(state.paper.realizedPnl) + ')</div>' +
+        '<div class="score-panel-caption" style="margin-top:6px;">' + formatUSD(state.paper.cash) + ' en liquide · ' + state.paper.positions.length + ' position(s) ouverte(s)</div>' +
         '<button class="btn ghost" style="margin-top:12px;" id="paper-reset-btn">Réinitialiser (1000$ fictifs)</button>' +
       '</div>' +
       (rows || '<div class="empty">Aucune position. Ouvre une paire et utilise "Simulation d\'achat" en bas du graphique pour t\'entraîner sans argent réel.</div>');
 
     const resetBtn = document.getElementById('paper-reset-btn');
     if(resetBtn) resetBtn.addEventListener('click', function(){
-      state.paper = { cash: 1000, positions: [] };
+      state.paper = { cash: 1000, positions: [], realizedPnl: 0 };
       saveJSON('hoodlum_paper', state.paper);
       render();
     });
@@ -1503,7 +1535,7 @@ window.addEventListener('error', function(e){
   // chart modal
   function openChartModal(network, address, baseAddress, pairLabel){
     const chartUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address +
-      '?embed=1&info=0&swaps=0&light_chart=0&chart_type=price&resolution=1m&bg_color=0A0A10';
+      '?embed=1&info=1&swaps=0&light_chart=0&chart_type=price&resolution=1m&bg_color=0A0A10';
     const externalUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address;
     els.chartModalTitle.textContent = pairLabel;
     els.chartLoading.classList.remove('hidden');
@@ -1539,7 +1571,8 @@ window.addEventListener('error', function(e){
     const sellBtn = e.target.closest('[data-sell-id]');
     if(sellBtn){
       const price = sellBtn.dataset.sellPrice ? parseFloat(sellBtn.dataset.sellPrice) : null;
-      paperSell(sellBtn.dataset.sellId, price);
+      const pct = parseFloat(sellBtn.dataset.sellPct) || 1;
+      paperSell(sellBtn.dataset.sellId, pct, price);
       return;
     }
     const starBtn = e.target.closest('.star-btn');
@@ -1557,6 +1590,7 @@ window.addEventListener('error', function(e){
     const sec = pool && pool.baseAddress ? state.securityCache[pool.network + ':' + pool.baseAddress.toLowerCase()] : null;
     const score = pool ? computeScore(pool, sec) : { total: null, parts: {} };
     state.currentModalPool = pool || null;
+    updatePaperBuyPanel();
     els.scorePanel.innerHTML =
       '<div class="score-panel-text">' +
         '<span class="score-panel-total">' + (score.total === null ? '—' : score.total + '/100') + '</span>' +
@@ -1568,7 +1602,7 @@ window.addEventListener('error', function(e){
   els.paperBuyRow.addEventListener('click', function(e){
     const btn = e.target.closest('.paper-buy-btn');
     if(!btn || !state.currentModalPool) return;
-    paperBuy(state.currentModalPool, parseFloat(btn.dataset.amount));
+    paperBuy(state.currentModalPool, parseFloat(btn.dataset.pct));
   });
 
   setInterval(function(){
