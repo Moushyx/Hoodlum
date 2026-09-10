@@ -242,15 +242,20 @@
     padding:14px 16px; background:var(--surface-solid); border-bottom:1px solid var(--border);
   }
   .chart-modal-title{ font-weight:700; font-size:15px; }
-  .chart-modal-body{ flex:1; background:#0A0A10; }
-  .chart-modal-body iframe{ width:100%; height:100%; border:0; }
+  .chart-modal-body{ flex:1; background:#0A0A10; display:flex; flex-direction:column; overflow-y:auto; }
+  .chart-modal-body iframe{ width:100%; flex:0 0 55%; min-height:320px; border:0; }
+  #jupiter-plugin-wrap{ flex:1; padding:12px; background:var(--surface-solid); border-top:1px solid var(--border); }
+  #jupiter-plugin{ max-width:420px; margin:0 auto; }
   .chart-modal-footer{
     padding:12px 16px; background:var(--surface-solid); border-top:1px solid var(--border);
   }
   .chart-modal-footer a{
-    color:var(--cyan); text-decoration:none; font-size:13px; font-weight:600;
+    display:block; text-align:center;
+    background:var(--gradient); color:#0A0A10; text-decoration:none;
+    font-size:14px; font-weight:700; padding:13px; border-radius:12px;
   }
 </style>
+<script src="https://plugin.jup.ag/plugin-v1.js" data-preload defer></script>
 </head>
 <body>
 <div class="app">
@@ -410,10 +415,13 @@
     <button class="icon-btn" id="chart-modal-close">✕</button>
   </div>
   <div class="chart-modal-body">
-    <iframe id="chart-modal-iframe" src="" title="Graphique du token" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox" allow="clipboard-write"></iframe>
+    <iframe id="chart-modal-iframe" src="" title="Graphique du token" sandbox="allow-scripts allow-same-origin allow-forms" allow="clipboard-write"></iframe>
+    <div id="jupiter-plugin-wrap" style="display:none;">
+      <div id="jupiter-plugin"></div>
+    </div>
   </div>
   <div class="chart-modal-footer">
-    <a id="chart-modal-external" href="#" target="_blank" rel="noopener">Ouvrir sur GeckoTerminal (trading complet) ↗</a>
+    <a id="chart-modal-external" href="#" target="_blank" rel="noopener">Acheter / vendre sur GeckoTerminal ↗</a>
   </div>
 </div>
 
@@ -488,7 +496,8 @@ window.addEventListener('error', function(e){
     chartModalTitle: document.getElementById('chart-modal-title'),
     chartModalIframe: document.getElementById('chart-modal-iframe'),
     chartModalExternal: document.getElementById('chart-modal-external'),
-    chartModalClose: document.getElementById('chart-modal-close')
+    chartModalClose: document.getElementById('chart-modal-close'),
+    jupiterWrap: document.getElementById('jupiter-plugin-wrap')
   };
 
   function escapeHTML(str){
@@ -786,7 +795,7 @@ window.addEventListener('error', function(e){
     }
 
     return (
-      '<div class="row' + (isNew ? ' just-in' : '') + '" data-pool-id="' + escapeHTML(pool.id) + '" data-network="' + escapeHTML(state.network) + '" data-address="' + escapeHTML(pool.address) + '" data-pair="' + escapeHTML(pool.base) + ' / ' + escapeHTML(pool.quote) + '">' +
+      '<div class="row' + (isNew ? ' just-in' : '') + '" data-pool-id="' + escapeHTML(pool.id) + '" data-network="' + escapeHTML(state.network) + '" data-address="' + escapeHTML(pool.address) + '" data-base-address="' + escapeHTML(pool.baseAddress) + '" data-pair="' + escapeHTML(pool.base) + ' / ' + escapeHTML(pool.quote) + '">' +
         '<div class="row-top">' +
           avatarHTML(pool) +
           '<div class="row-main">' +
@@ -986,14 +995,33 @@ window.addEventListener('error', function(e){
   els.fApply.addEventListener('click', closeSheet);
 
   // chart modal
-  function openChartModal(network, address, pairLabel){
+  function openChartModal(network, address, baseAddress, pairLabel){
     const chartUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address +
-      '?embed=1&info=0&swaps=1&light_chart=0&chart_type=price&resolution=15m&bg_color=0A0A10';
+      '?embed=1&info=1&swaps=0&light_chart=0&chart_type=price&resolution=15m&bg_color=0A0A10';
     const externalUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address;
     els.chartModalTitle.textContent = pairLabel;
     els.chartModalIframe.src = chartUrl;
     els.chartModalExternal.href = externalUrl;
     els.chartModal.classList.add('open');
+
+    if(network === 'solana' && baseAddress && window.Jupiter){
+      els.jupiterWrap.style.display = 'block';
+      try{
+        window.Jupiter.init({
+          displayMode: 'integrated',
+          integratedTargetId: 'jupiter-plugin',
+          formProps: {
+            initialOutputMint: baseAddress,
+            fixedMint: baseAddress
+          }
+        });
+      }catch(err){
+        console.warn('Hoodlum: Jupiter Plugin indisponible', err);
+        els.jupiterWrap.style.display = 'none';
+      }
+    } else {
+      els.jupiterWrap.style.display = 'none';
+    }
   }
   function closeChartModal(){
     els.chartModal.classList.remove('open');
@@ -1004,7 +1032,7 @@ window.addEventListener('error', function(e){
     if(!row) return;
     const address = row.dataset.address;
     if(!address) return;
-    openChartModal(row.dataset.network, address, row.dataset.pair);
+    openChartModal(row.dataset.network, address, row.dataset.baseAddress, row.dataset.pair);
   });
   els.chartModalClose.addEventListener('click', closeChartModal);
 
