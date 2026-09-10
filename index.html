@@ -26,6 +26,13 @@
     --gradient-warm:linear-gradient(135deg, var(--pink), var(--purple));
     --display:'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
     --mono:'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+    /* Jupiter Plugin theme (RGB triples, no rgb() wrapper — per Jupiter's docs) */
+    --jupiter-plugin-primary: 168, 85, 247;
+    --jupiter-plugin-background: 10, 10, 16;
+    --jupiter-plugin-primaryText: 245, 245, 250;
+    --jupiter-plugin-warning: 251, 191, 36;
+    --jupiter-plugin-interactive: 30, 30, 42;
+    --jupiter-plugin-module: 20, 20, 30;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -266,8 +273,8 @@
     background:#0A0A10; pointer-events:none; transition:opacity .2s ease;
   }
   .chart-loading.hidden{ opacity:0; }
-  #jupiter-plugin-wrap{ flex:0 0 auto; padding:14px; background:var(--surface-solid); border-top:1px solid var(--border); }
-  #jupiter-plugin{ max-width:420px; margin:0 auto; }
+  #jupiter-plugin-wrap{ flex:0 0 auto; padding:10px 14px; background:var(--surface-solid); border-top:1px solid var(--border); max-height:420px; overflow-y:auto; }
+  #jupiter-plugin{ max-width:360px; margin:0 auto; }
   .swap-hint{ text-align:center; font-size:11.5px; color:var(--text-muted); margin:0 0 10px; }
   .score-panel{
     padding:8px 16px; background:var(--surface-solid); border-bottom:1px solid var(--border);
@@ -298,6 +305,7 @@
     padding:9px 4px; border-radius:10px; font-family:var(--mono); font-weight:600; font-size:13px; cursor:pointer;
   }
   .paper-buy-btn:active{ background:var(--surface-2); }
+  .paper-buy-btn.sell{ border-color:rgba(251,113,133,0.4); color:var(--red); }
   .sell-row{ display:flex; gap:6px; margin-top:10px; }
   .sell-row .paper-buy-btn{ font-size:12px; padding:8px 4px; }
   .paper-toast{
@@ -530,10 +538,16 @@
     <button class="paper-buy-btn" data-pct="0.5">Acheter 50%</button>
     <button class="paper-buy-btn" data-pct="1">Acheter tout</button>
   </div>
+  <div class="paper-buy-row" id="paper-sell-section" style="display:none;">
+    <span class="paper-buy-label">Ta position — vendre :</span>
+    <button class="paper-buy-btn sell" data-modal-sell-pct="0.25">Vendre 25%</button>
+    <button class="paper-buy-btn sell" data-modal-sell-pct="0.5">Vendre 50%</button>
+    <button class="paper-buy-btn sell" data-modal-sell-pct="1">Tout vendre</button>
+  </div>
   <div class="chart-modal-body">
     <div class="chart-loading" id="chart-loading">Chargement du graphique…</div>
     <div class="position-badge" id="position-badge" style="display:none;"></div>
-    <iframe id="chart-modal-iframe" src="" title="Graphique du token" sandbox="allow-scripts allow-same-origin allow-forms" allow="clipboard-write"></iframe>
+    <iframe id="chart-modal-iframe" src="" title="Graphique du token" scrolling="no" sandbox="allow-scripts allow-same-origin allow-forms" allow="clipboard-write"></iframe>
     <div id="jupiter-plugin-wrap" style="display:none;">
       <p class="swap-hint">Swap Jupiter — connecte ton wallet ci-dessous</p>
       <div id="jupiter-plugin"></div>
@@ -598,7 +612,7 @@ window.addEventListener('error', function(e){
     watchlistLoading: false,
     alerts: loadJSON('hoodlum_alerts', { enabled: false, minLiquidity: 5000, minChange1h: 0, requireMintSafe: false, requireLpLocked: false }),
     notifiedIds: new Set(),
-    paper: loadJSON('hoodlum_paper', { cash: 1000, positions: [], realizedPnl: 0 }),
+    paper: loadJSON('hoodlum_paper', { cash: 1000, positions: [], realizedPnl: 0, history: [] }),
     paperLoading: false,
     currentModalPool: null
   };
@@ -648,6 +662,7 @@ window.addEventListener('error', function(e){
     aClose: document.getElementById('a-close'),
     aSave: document.getElementById('a-save'),
     paperBuyRow: document.getElementById('paper-buy-row'),
+    paperSellSection: document.getElementById('paper-sell-section'),
     paperToast: document.getElementById('paper-toast')
   };
 
@@ -963,6 +978,12 @@ window.addEventListener('error', function(e){
     const realized = proceeds - costBasis;
     state.paper.cash = Math.round((state.paper.cash + proceeds) * 100) / 100;
     state.paper.realizedPnl = Math.round((state.paper.realizedPnl + realized) * 100) / 100;
+    if(!state.paper.history) state.paper.history = [];
+    state.paper.history.unshift({
+      network: pos.network, address: pos.address, base: pos.base, quote: pos.quote,
+      entryPrice: pos.entryPrice, exitPrice: price, pnl: realized, closedAt: Date.now()
+    });
+    state.paper.history = state.paper.history.slice(0, 50);
     if(pct >= 0.999){
       state.paper.positions.splice(idx, 1);
     } else {
@@ -978,6 +999,9 @@ window.addEventListener('error', function(e){
   function updatePaperBuyPanel(){
     const label = document.getElementById('paper-cash-label');
     if(label) label.textContent = 'Solde fictif : ' + formatUSD(state.paper.cash);
+    const pool = state.currentModalPool;
+    const hasPosition = pool && state.paper.positions.some(function(p){ return p.network === pool.network && p.address === pool.address; });
+    els.paperSellSection.style.display = hasPosition ? 'flex' : 'none';
   }
 
   async function refreshPaper(silent){
@@ -1418,7 +1442,7 @@ window.addEventListener('error', function(e){
 
     const resetBtn = document.getElementById('paper-reset-btn');
     if(resetBtn) resetBtn.addEventListener('click', function(){
-      state.paper = { cash: 1000, positions: [], realizedPnl: 0 };
+      state.paper = { cash: 1000, positions: [], realizedPnl: 0, history: [] };
       saveJSON('hoodlum_paper', state.paper);
       render();
     });
@@ -1552,15 +1576,29 @@ window.addEventListener('error', function(e){
   // chart modal
   function renderPositionBadge(pool){
     const badge = document.getElementById('position-badge');
-    const pos = pool ? state.paper.positions.find(function(p){ return p.network === pool.network && p.address === pool.address; }) : null;
-    if(!pos || !pool.priceUsd){ badge.style.display = 'none'; return; }
-    const pct = ((pool.priceUsd - pos.entryPrice) / pos.entryPrice) * 100;
-    const cls = pct >= 0 ? 'pos' : 'neg';
-    const sign = pct >= 0 ? '+' : '';
-    badge.style.display = 'block';
-    badge.innerHTML =
-      '<div class="pb-line1">Ta position · entrée $' + formatPrice(pos.entryPrice) + '</div>' +
-      '<div class="pb-line2 change ' + cls + '" style="padding:0;background:none;">' + sign + pct.toFixed(1) + '%</div>';
+    if(!pool){ badge.style.display = 'none'; return; }
+    const pos = state.paper.positions.find(function(p){ return p.network === pool.network && p.address === pool.address; });
+    if(pos && pool.priceUsd){
+      const pct = ((pool.priceUsd - pos.entryPrice) / pos.entryPrice) * 100;
+      const cls = pct >= 0 ? 'pos' : 'neg';
+      const sign = pct >= 0 ? '+' : '';
+      badge.style.display = 'block';
+      badge.innerHTML =
+        '<div class="pb-line1">Ta position · entrée $' + formatPrice(pos.entryPrice) + '</div>' +
+        '<div class="pb-line2 change ' + cls + '" style="padding:0;background:none;">' + sign + pct.toFixed(1) + '%</div>';
+      return;
+    }
+    const lastExit = (state.paper.history || []).find(function(h){ return h.network === pool.network && h.address === pool.address; });
+    if(lastExit){
+      const cls = lastExit.pnl >= 0 ? 'pos' : 'neg';
+      const sign = lastExit.pnl >= 0 ? '+' : '';
+      badge.style.display = 'block';
+      badge.innerHTML =
+        '<div class="pb-line1">Dernière sortie · $' + formatPrice(lastExit.exitPrice) + '</div>' +
+        '<div class="pb-line2 change ' + cls + '" style="padding:0;background:none;">' + sign + formatUSD(lastExit.pnl) + '</div>';
+      return;
+    }
+    badge.style.display = 'none';
   }
 
   function openChartModal(pool, pairLabel){
@@ -1594,6 +1632,7 @@ window.addEventListener('error', function(e){
         window.Jupiter.init({
           displayMode: 'integrated',
           integratedTargetId: 'jupiter-plugin',
+          containerStyles: { maxHeight: '380px', borderRadius: '14px' },
           formProps: {
             initialOutputMint: baseAddress,
             fixedMint: baseAddress
@@ -1650,6 +1689,16 @@ window.addEventListener('error', function(e){
     const btn = e.target.closest('.paper-buy-btn');
     if(!btn || !state.currentModalPool) return;
     paperBuy(state.currentModalPool, parseFloat(btn.dataset.pct));
+  });
+  els.paperSellSection.addEventListener('click', function(e){
+    const btn = e.target.closest('[data-modal-sell-pct]');
+    if(!btn || !state.currentModalPool) return;
+    const pool = state.currentModalPool;
+    const pos = state.paper.positions.find(function(p){ return p.network === pool.network && p.address === pool.address; });
+    if(!pos) return;
+    paperSell(pos.id, parseFloat(btn.dataset.modalSellPct), pool.priceUsd);
+    updatePaperBuyPanel();
+    renderPositionBadge(pool);
   });
 
   setInterval(function(){
