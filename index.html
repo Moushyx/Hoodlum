@@ -196,11 +196,17 @@
   .tag.bp{ color:var(--text); background:var(--surface-2); border-color:transparent; }
   .tag.platform{ color:var(--cyan); border-color:rgba(34,211,238,0.4); }
   .tag.network{ color:var(--purple); border-color:rgba(168,85,247,0.4); }
-  .score-bar{ display:flex; gap:2px; width:100%; height:5px; margin-top:8px; border-radius:3px; overflow:hidden; }
-  .score-bar span{ flex:1; background:rgba(255,255,255,0.08); }
-  .score-bar span.on-high{ background:var(--green); }
-  .score-bar span.on-mid{ background:var(--yellow); }
-  .score-bar span.on-low{ background:var(--red); }
+  .score-bar{ display:flex; gap:4px; width:100%; margin-top:8px; }
+  .score-seg{ flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; min-width:0; }
+  .score-seg-label{
+    font-size:7.5px; color:var(--text-muted); font-family:var(--mono);
+    text-transform:uppercase; letter-spacing:0.02em; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; max-width:100%;
+  }
+  .score-seg-fill{ width:100%; height:5px; border-radius:3px; background:rgba(255,255,255,0.08); }
+  .score-seg-fill.on-high{ background:var(--green); }
+  .score-seg-fill.on-mid{ background:var(--yellow); }
+  .score-seg-fill.on-low{ background:var(--red); }
   .tag.sec-ok{ color:var(--green); border-color:rgba(52,211,153,0.5); }
   .tag.sec-bad{ color:var(--red); border-color:rgba(251,113,133,0.5); background:rgba(251,113,133,0.08); }
 
@@ -273,7 +279,7 @@
     background:#0A0A10; pointer-events:none; transition:opacity .2s ease;
   }
   .chart-loading.hidden{ opacity:0; }
-  #jupiter-plugin-wrap{ flex:0 0 auto; padding:10px 14px; background:var(--surface-solid); border-top:1px solid var(--border); max-height:420px; overflow-y:auto; }
+  #jupiter-plugin-wrap{ flex:0 0 auto; padding:10px 14px; background:var(--surface-solid); border-top:1px solid var(--border); }
   #jupiter-plugin{ max-width:360px; margin:0 auto; }
   .swap-hint{ text-align:center; font-size:11.5px; color:var(--text-muted); margin:0 0 10px; }
   .score-panel{
@@ -1157,11 +1163,17 @@ window.addEventListener('error', function(e){
   }
 
   function scoreBarHTML(parts){
-    const order = ['liq', 'mint', 'lp', 'buy', 'holders'];
-    return '<div class="score-bar">' + order.map(function(k){
-      const v = parts[k];
+    const order = [
+      { key: 'liq', label: 'Liq' },
+      { key: 'mint', label: 'Mint' },
+      { key: 'lp', label: 'LP' },
+      { key: 'buy', label: 'Ach' },
+      { key: 'holders', label: 'Hold' }
+    ];
+    return '<div class="score-bar">' + order.map(function(ax){
+      const v = parts[ax.key];
       const cls = v === null ? '' : (v >= 70 ? 'on-high' : v >= 40 ? 'on-mid' : 'on-low');
-      return '<span class="' + cls + '"></span>';
+      return '<div class="score-seg"><span class="score-seg-label">' + ax.label + '</span><span class="score-seg-fill ' + cls + '"></span></div>';
     }).join('') + '</div>';
   }
 
@@ -1680,7 +1692,7 @@ window.addEventListener('error', function(e){
     els.scorePanel.innerHTML =
       '<div class="score-panel-text">' +
         '<span class="score-panel-total">' + (score.total === null ? '—' : score.total + '/100') + '</span>' +
-        '<span class="score-panel-caption">Liquidité · Mint · LP · Achats · Holders</span>' +
+        '<span class="score-panel-caption">score de confiance</span>' +
       '</div>' + scoreBarHTML(score.parts);
     openChartModal(pool, row.dataset.pair);
   });
