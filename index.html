@@ -1343,7 +1343,7 @@ window.addEventListener('error', function(e){
   // chart modal
   function openChartModal(network, address, baseAddress, pairLabel){
     const chartUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address +
-      '?embed=1&info=1&swaps=0&light_chart=0&chart_type=price&resolution=15m&bg_color=0A0A10';
+      '?embed=1&info=0&swaps=0&light_chart=0&chart_type=price&resolution=1m&bg_color=0A0A10';
     const externalUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address;
     els.chartModalTitle.textContent = pairLabel;
     els.chartLoading.classList.remove('hidden');
