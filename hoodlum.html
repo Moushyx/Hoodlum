@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Hoodlum — Traqueur memecoins multi-chaînes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0A0A10;
+    --surface:rgba(255,255,255,0.045);
+    --surface-solid:#14141E;
+    --surface-2:rgba(255,255,255,0.08);
+    --border:rgba(255,255,255,0.09);
+    --text:#F5F5FA;
+    --text-muted:#8B8B9E;
+    --purple:#A855F7;
+    --cyan:#22D3EE;
+    --pink:#F472B6;
+    --green:#34D399;
+    --red:#FB7185;
+    --yellow:#FBBF24;
+    --gradient:linear-gradient(135deg, var(--purple), var(--cyan));
+    --gradient-warm:linear-gradient(135deg, var(--pink), var(--purple));
+    --display:'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+    --mono:'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(circle at 15% 0%, rgba(168,85,247,0.16), transparent 45%),
+      radial-gradient(circle at 90% 15%, rgba(34,211,238,0.12), transparent 40%),
+      var(--bg);
+    color:var(--text);
+    font-family:var(--display);
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  .app{ max-width:560px; margin:0 auto; padding:0 0 40px; }
+
+  .topbar{
+    position:sticky; top:0; z-index:20;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:18px 16px 6px;
+    backdrop-filter:blur(14px);
+    background:linear-gradient(rgba(10,10,16,0.92), rgba(10,10,16,0.55) 70%, transparent);
+  }
+  .brand{display:flex;align-items:center;gap:9px;}
+  .brand h1{
+    font-size:23px;font-weight:800;margin:0;letter-spacing:-0.02em;
+    background:var(--gradient);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .dot{
+    width:8px;height:8px;border-radius:50%;
+    background:var(--green);
+    box-shadow:0 0 0 0 rgba(52,211,153,0.6);
+    animation:pulse 2s infinite;
+  }
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(52,211,153,0.5);}
+    70%{box-shadow:0 0 0 8px rgba(52,211,153,0);}
+    100%{box-shadow:0 0 0 0 rgba(52,211,153,0);}
+  }
+  .topbar-actions{display:flex;gap:8px;}
+  .icon-btn{
+    background:var(--surface);
+    border:1px solid var(--border);
+    color:var(--text);
+    width:38px;height:38px;
+    border-radius:12px;
+    font-size:16px;
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    position:relative;
+    transition:transform .15s ease;
+  }
+  .icon-btn:active{transform:scale(0.9);}
+  .icon-btn .badge-count{
+    position:absolute; top:-4px; right:-4px;
+    background:var(--gradient);
+    color:#0A0A10; font-family:var(--mono); font-weight:600;
+    font-size:9px; min-width:15px; height:15px; border-radius:8px;
+    display:flex; align-items:center; justify-content:center; padding:0 3px;
+  }
+  .subtitle{
+    padding:2px 16px 12px;
+    color:var(--text-muted);
+    font-size:12.5px;
+    font-family:var(--mono);
+  }
+
+  .tabs{ display:flex; gap:8px; padding:0 16px 10px; }
+  .tab{
+    flex:1; padding:10px 12px;
+    background:var(--surface); border:1px solid var(--border);
+    color:var(--text-muted); border-radius:12px;
+    font-family:var(--display); font-weight:600; font-size:13.5px;
+    cursor:pointer;
+  }
+  .tab.active{
+    background:var(--gradient);
+    border-color:transparent;
+    color:#0A0A10;
+  }
+
+  .platform-row{
+    display:flex; gap:7px; padding:0 16px 12px;
+    overflow-x:auto; scrollbar-width:none;
+  }
+  .platform-row::-webkit-scrollbar{display:none;}
+  .chip{
+    flex:0 0 auto;
+    padding:6px 12px;
+    border-radius:20px;
+    font-size:12px; font-weight:600;
+    border:1px solid var(--border);
+    background:var(--surface);
+    color:var(--text-muted);
+    white-space:nowrap;
+    cursor:pointer;
+  }
+  .chip.active{ color:#0A0A10; border-color:transparent; }
+
+  .status{
+    padding:4px 16px; font-size:12.5px; color:var(--text-muted);
+    font-family:var(--mono); min-height:16px;
+  }
+  .status.error{color:var(--red);}
+  .status.error button{
+    margin-left:8px; background:none; border:1px solid var(--red); color:var(--red);
+    border-radius:6px; padding:2px 8px; font-family:var(--display); font-size:11.5px; cursor:pointer;
+  }
+
+  .list{ padding:6px 16px 0; display:flex; flex-direction:column; gap:9px; }
+  .row{
+    display:block; background:var(--surface); border:1px solid var(--border);
+    border-radius:16px; padding:13px 14px; text-decoration:none; color:var(--text);
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .row:active{background:var(--surface-2);}
+  .row-top{ display:flex; align-items:center; gap:10px; }
+  .avatar{
+    width:34px;height:34px;border-radius:50%;flex:0 0 auto;
+    object-fit:cover; background:var(--surface-2); border:1px solid var(--border);
+  }
+  .avatar-fallback{
+    width:34px;height:34px;border-radius:50%;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--display); font-weight:700; font-size:13px; color:#0A0A10;
+  }
+  .row-main{ flex:1; min-width:0; }
+  .row-main-top{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .pair{ font-weight:700; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pair .quote{ color:var(--text-muted); font-weight:500; font-size:12.5px; }
+  .price{ font-family:var(--mono); font-size:13.5px; color:var(--text-muted); flex:0 0 auto; }
+  .row-sub{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:4px; }
+  .change{ font-family:var(--mono); font-weight:700; font-size:13px; padding:2px 7px; border-radius:6px; }
+  .change.pos{ color:var(--green); background:rgba(52,211,153,0.12); }
+  .change.neg{ color:var(--red); background:rgba(251,113,133,0.12); }
+  .change.mini{ font-size:11px; padding:2px 6px; background:transparent; border:1px solid var(--border); }
+  @keyframes justIn{
+    0%{ box-shadow:0 0 0 2px var(--cyan); background:rgba(34,211,238,0.12); }
+    100%{ box-shadow:0 0 0 0 rgba(34,211,238,0); background:var(--surface); }
+  }
+  .row.just-in{ animation:justIn 2.2s ease-out; }
+  .meta{ font-family:var(--mono); font-size:11px; color:var(--text-muted); }
+  .row-tags{ display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
+  .tag{
+    font-size:10.5px; padding:3px 8px; border-radius:20px;
+    border:1px solid var(--border); color:var(--text-muted);
+  }
+  .tag.risk-high{ color:var(--red); border-color:rgba(251,113,133,0.5); }
+  .tag.risk-mid{ color:var(--yellow); border-color:rgba(251,191,36,0.5); }
+  .tag.risk-low{ color:var(--green); border-color:rgba(52,211,153,0.5); }
+  .tag.bp{ color:var(--text); background:var(--surface-2); border-color:transparent; }
+  .tag.platform{ color:var(--cyan); border-color:rgba(34,211,238,0.4); }
+  .tag.sec-ok{ color:var(--green); border-color:rgba(52,211,153,0.5); }
+  .tag.sec-bad{ color:var(--red); border-color:rgba(251,113,133,0.5); background:rgba(251,113,133,0.08); }
+
+  .empty{ padding:40px 18px; text-align:center; color:var(--text-muted); font-size:13.5px; line-height:1.5; }
+  .skeleton{
+    height:82px; border-radius:16px;
+    background:linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 37%, var(--surface) 63%);
+    background-size:400% 100%; animation:shimmer 1.4s ease infinite;
+  }
+  @keyframes shimmer{ 0%{background-position:100% 50%;} 100%{background-position:0 50%;} }
+
+  footer{ padding:26px 16px 0; color:var(--text-muted); font-size:11px; line-height:1.5; }
+  footer p{margin:0;}
+
+  /* filter sheet */
+  .backdrop{
+    position:fixed; inset:0; background:rgba(0,0,0,0.55);
+    opacity:0; pointer-events:none; transition:opacity .2s ease; z-index:30;
+  }
+  .backdrop.open{ opacity:1; pointer-events:auto; }
+  .sheet{
+    position:fixed; left:0; right:0; bottom:0; z-index:31;
+    max-width:560px; margin:0 auto;
+    background:var(--surface-solid);
+    border:1px solid var(--border); border-bottom:none;
+    border-radius:22px 22px 0 0;
+    padding:8px 18px 22px;
+    transform:translateY(105%);
+    transition:transform .25s ease;
+    max-height:82vh; overflow-y:auto;
+  }
+  .sheet.open{ transform:translateY(0); }
+  .sheet-handle{ width:36px; height:4px; border-radius:3px; background:var(--border); margin:8px auto 14px; }
+  .sheet h2{ font-size:18px; margin:0 0 14px; }
+  .field{ margin-bottom:14px; }
+  .field label{ display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px; }
+  .field input, .field select{
+    width:100%; background:var(--surface); border:1px solid var(--border); color:var(--text);
+    padding:10px 12px; border-radius:10px; font-family:var(--display); font-size:14px; outline:none;
+  }
+  .two-col{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .sheet-chips{ display:flex; flex-wrap:wrap; gap:7px; }
+  .sheet-actions{ display:flex; gap:10px; margin-top:6px; }
+  .btn{
+    flex:1; padding:12px; border-radius:12px; font-family:var(--display); font-weight:700;
+    font-size:14px; border:none; cursor:pointer;
+  }
+  .btn.primary{ background:var(--gradient); color:#0A0A10; }
+  .btn.ghost{ background:var(--surface); color:var(--text); border:1px solid var(--border); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand"><span class="dot"></span><h1>Hoodlum</h1></div>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="filter-btn" title="Filtres">☰<span class="badge-count" id="filter-count" style="display:none;">0</span></button>
+      <button class="icon-btn" id="refresh-btn" title="Actualiser">⟳</button>
+    </div>
+  </div>
+  <div class="subtitle">Paires memecoins · <span id="network-label">Robinhood Chain</span> · <span id="updated-at">chargement…</span></div>
+
+  <div class="tabs" id="network-row">
+    <button class="tab active" data-network="robinhood">Robinhood Chain</button>
+    <button class="tab" data-network="solana">Solana</button>
+  </div>
+
+  <div class="tabs" id="tab-row">
+    <button class="tab active" data-tab="trending">En tendance</button>
+    <button class="tab" data-tab="new">Nouvelles paires</button>
+  </div>
+
+  <div class="platform-row" id="platform-row"></div>
+
+  <div class="status" id="status"></div>
+  <div class="list" id="list"></div>
+
+  <footer>
+    <p>Prix et pools via GeckoTerminal, contrôles de contrat via GoPlus Security (quand disponibles — le parsing des champs de sécurité côté Solana est fait au mieux, moins vérifié que côté Robinhood Chain). À but indicatif, pas un conseil financier ni un audit garanti. Les tokens tout juste créés n'ont souvent pas encore de données de sécurité — c'est normal, pas une erreur. Projet indépendant, sans lien avec Robinhood Markets, Inc.</p>
+  </footer>
+
+</div>
+
+<div class="backdrop" id="backdrop"></div>
+<div class="sheet" id="sheet">
+  <div class="sheet-handle"></div>
+  <h2>Filtres</h2>
+
+  <div class="field">
+    <label>Chercher un symbole</label>
+    <input id="f-search" type="text" placeholder="Ex: CASHCAT" autocomplete="off">
+  </div>
+
+  <div class="field">
+    <label>Plateformes</label>
+    <div class="sheet-chips" id="sheet-platforms"></div>
+  </div>
+
+  <div class="two-col">
+    <div class="field">
+      <label>Liquidité min</label>
+      <select id="f-liquidity">
+        <option value="0" selected>Aucune</option>
+        <option value="1000">1 000 $</option>
+        <option value="5000">5 000 $</option>
+        <option value="25000">25 000 $</option>
+        <option value="100000">100 000 $</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Volume 24h min</label>
+      <select id="f-volume">
+        <option value="0" selected>Aucun</option>
+        <option value="1000">1 000 $</option>
+        <option value="10000">10 000 $</option>
+        <option value="50000">50 000 $</option>
+        <option value="200000">200 000 $</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="field">
+      <label>Variation 24h min</label>
+      <select id="f-change">
+        <option value="" selected>Aucune</option>
+        <option value="10">+10%</option>
+        <option value="50">+50%</option>
+        <option value="100">+100%</option>
+        <option value="500">+500%</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Âge max</label>
+      <select id="f-age">
+        <option value="" selected>Illimité</option>
+        <option value="5">5 min</option>
+        <option value="15">15 min</option>
+        <option value="60">1 h</option>
+        <option value="360">6 h</option>
+        <option value="1440">24 h</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="field">
+    <label>Pression achats min (1h)</label>
+    <select id="f-buypressure">
+      <option value="" selected>Aucune</option>
+      <option value="50">50%</option>
+      <option value="70">70%</option>
+      <option value="90">90%</option>
+    </select>
+  </div>
+
+  <div class="two-col">
+    <div class="field">
+      <label>FDV max (rester tôt)</label>
+      <select id="f-fdv">
+        <option value="" selected>Illimité</option>
+        <option value="50000">50 000 $</option>
+        <option value="200000">200 000 $</option>
+        <option value="1000000">1 M$</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Achats min (1h)</label>
+      <select id="f-buys1h">
+        <option value="" selected>Aucun</option>
+        <option value="5">5</option>
+        <option value="20">20</option>
+        <option value="50">50</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="field">
+    <label>Holders min (si connu)</label>
+    <select id="f-holders">
+      <option value="" selected>Aucun</option>
+      <option value="10">10</option>
+      <option value="50">50</option>
+      <option value="200">200</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label>Trier par</label>
+    <select id="f-sort">
+      <option value="volume">Volume 24h</option>
+      <option value="liquidity">Liquidité</option>
+      <option value="change">Variation 24h</option>
+      <option value="new">Plus récent</option>
+    </select>
+  </div>
+
+  <div class="sheet-actions">
+    <button class="btn ghost" id="f-reset">Réinitialiser</button>
+    <button class="btn primary" id="f-apply">Appliquer</button>
+  </div>
+</div>
+
+<script>
+window.addEventListener('error', function(e){
+  var list = document.getElementById('list');
+  var status = document.getElementById('status');
+  if(status){
+    status.className = 'status error';
+    status.textContent = 'Erreur JavaScript au chargement : ' + (e && e.message ? e.message : 'inconnue');
+  }
+  if(list && !list.innerHTML){
+    list.innerHTML = '<div class="empty">La page a rencontré une erreur avant de pouvoir charger les paires.</div>';
+  }
+});
+
+(function(){
+  const NETWORKS = {
+    robinhood: { label: 'Robinhood Chain', goplusType: 'evm', goplusChainId: '4663' },
+    solana: { label: 'Solana', goplusType: 'solana' }
+  };
+  const GT_BASE = 'https://api.geckoterminal.com/api/v2';
+  const GOPLUS_EVM_BASE = 'https://api.gopluslabs.io/api/v1/token_security';
+  const GOPLUS_SOLANA_URL = 'https://api.gopluslabs.io/api/v1/solana/token_security';
+  const REFRESH_MS = 12000;
+  const PALETTE = ['#A855F7', '#22D3EE', '#F472B6', '#34D399', '#FBBF24', '#818CF8'];
+
+  const state = {
+    network: 'robinhood',
+    tab: 'trending',
+    pools: { trending: null, new: null },
+    rawCount: { trending: null, new: null },
+    error: { trending: null, new: null },
+    lastUpdated: { trending: null, new: null },
+    loading: false,
+    refreshing: false,
+    sortBy: 'new',
+    filters: { search: '', minLiquidity: 0, minVolume: 0, minChange24h: null, maxAgeMinutes: null, minBuyPressure: null, maxFdv: null, minBuys1h: null, minHolders: null, platforms: new Set() },
+    imageCache: {},
+    securityCache: {},
+    seenIds: {},
+    sheetOpen: false
+  };
+
+  const els = {
+    list: document.getElementById('list'),
+    status: document.getElementById('status'),
+    updatedAt: document.getElementById('updated-at'),
+    tabs: document.querySelectorAll('#tab-row .tab'),
+    networkTabs: document.querySelectorAll('#network-row .tab'),
+    networkLabel: document.getElementById('network-label'),
+    platformRow: document.getElementById('platform-row'),
+    refreshBtn: document.getElementById('refresh-btn'),
+    filterBtn: document.getElementById('filter-btn'),
+    filterCount: document.getElementById('filter-count'),
+    backdrop: document.getElementById('backdrop'),
+    sheet: document.getElementById('sheet'),
+    sheetPlatforms: document.getElementById('sheet-platforms'),
+    fSearch: document.getElementById('f-search'),
+    fLiquidity: document.getElementById('f-liquidity'),
+    fVolume: document.getElementById('f-volume'),
+    fChange: document.getElementById('f-change'),
+    fAge: document.getElementById('f-age'),
+    fBuyPressure: document.getElementById('f-buypressure'),
+    fFdv: document.getElementById('f-fdv'),
+    fBuys1h: document.getElementById('f-buys1h'),
+    fHolders: document.getElementById('f-holders'),
+    fSort: document.getElementById('f-sort'),
+    fReset: document.getElementById('f-reset'),
+    fApply: document.getElementById('f-apply')
+  };
+
+  function escapeHTML(str){
+    const d = document.createElement('div');
+    d.textContent = str == null ? '' : String(str);
+    return d.innerHTML;
+  }
+
+  function hashColor(str){
+    let h = 0;
+    for(let i = 0; i < str.length; i++){ h = (h * 31 + str.charCodeAt(i)) >>> 0; }
+    return PALETTE[h % PALETTE.length];
+  }
+
+  function formatUSD(n){
+    if(!isFinite(n)) return '—';
+    if(n >= 1e6) return '$' + (n/1e6).toFixed(2) + 'M';
+    if(n >= 1e3) return '$' + (n/1e3).toFixed(1) + 'k';
+    return '$' + n.toFixed(0);
+  }
+
+  function formatPrice(n){
+    if(!isFinite(n) || n === 0) return '0';
+    if(n < 0.000001) return n.toExponential(2);
+    if(n < 1) return n.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
+    return n.toFixed(4);
+  }
+
+  function formatAge(date){
+    if(!date) return '—';
+    const diffMin = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
+    if(diffMin < 60) return diffMin + ' min';
+    const h = Math.floor(diffMin / 60);
+    if(h < 24) return h + ' h';
+    return Math.floor(h / 24) + ' j';
+  }
+
+  function ageMinutes(date){
+    if(!date) return Infinity;
+    return Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
+  }
+
+  function riskBadge(liquidity){
+    if(liquidity < 5000) return { label: 'Liquidité très faible', cls: 'risk-high' };
+    if(liquidity < 50000) return { label: 'Liquidité faible', cls: 'risk-mid' };
+    return { label: 'Liquidité correcte', cls: 'risk-low' };
+  }
+
+  function buyPressure(tx){
+    const buys = (tx && tx.buys) || 0;
+    const sells = (tx && tx.sells) || 0;
+    const total = buys + sells;
+    if(total === 0) return null;
+    return Math.round((buys / total) * 100);
+  }
+
+  function formatPlatform(dexId){
+    if(!dexId) return 'Inconnu';
+    return dexId.replace(/[_-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  function parsePool(p){
+    const a = p.attributes || {};
+    const parts = (a.name || '? / ?').split(' / ');
+    const pc = a.price_change_percentage || {};
+    const vol = a.volume_usd || {};
+    const tx = a.transactions || {};
+    const baseTokenId = (p.relationships && p.relationships.base_token && p.relationships.base_token.data && p.relationships.base_token.data.id) || '';
+    const dexId = (p.relationships && p.relationships.dex && p.relationships.dex.data && p.relationships.dex.data.id) || '';
+    const baseAddress = baseTokenId.indexOf('_') !== -1 ? baseTokenId.slice(baseTokenId.indexOf('_') + 1) : baseTokenId;
+    return {
+      id: p.id,
+      address: a.address || '',
+      baseAddress: baseAddress,
+      dexId: dexId,
+      base: parts[0] || '?',
+      quote: parts[1] || '?',
+      priceUsd: parseFloat(a.base_token_price_usd) || 0,
+      liquidity: parseFloat(a.reserve_in_usd) || 0,
+      volume24h: parseFloat(vol.h24) || 0,
+      fdv: a.fdv_usd ? parseFloat(a.fdv_usd) : null,
+      change24h: parseFloat(pc.h24) || 0,
+      change1h: parseFloat(pc.h1) || 0,
+      change5m: parseFloat(pc.m5) || 0,
+      txH1: tx.h1 || { buys: 0, sells: 0 },
+      createdAt: a.pool_created_at ? new Date(a.pool_created_at) : null
+    };
+  }
+
+  async function fetchJSON(url){
+    try{
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      return await res.json();
+    }catch(directErr){
+      try{
+        const proxied = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+        const res2 = await fetch(proxied);
+        if(!res2.ok) throw new Error('HTTP ' + res2.status + ' (proxy)');
+        return await res2.json();
+      }catch(proxyErr){
+        throw new Error((directErr && directErr.message ? directErr.message : 'échec direct') +
+          ' / ' + (proxyErr && proxyErr.message ? proxyErr.message : 'échec proxy'));
+      }
+    }
+  }
+
+  async function fetchPools(tab){
+    const endpoint = tab === 'trending' ? 'trending_pools' : 'new_pools';
+    const url = GT_BASE + '/networks/' + state.network + '/' + endpoint;
+    const json = await fetchJSON(url);
+    return (json.data || []).map(parsePool);
+  }
+
+  async function fetchImagesFor(network, addresses){
+    if(addresses.length === 0) return;
+    try{
+      const url = GT_BASE + '/networks/' + network + '/tokens/multi/' + addresses.join(',');
+      const json = await fetchJSON(url);
+      (json.data || []).forEach(function(t){
+        const attrs = t.attributes || {};
+        if(attrs.address && attrs.image_url){
+          state.imageCache[network + ':' + attrs.address.toLowerCase()] = attrs.image_url;
+        }
+      });
+    }catch(err){
+      console.warn('Hoodlum: images indisponibles', err);
+    }
+  }
+
+  async function fetchSecurityFor(network, addresses){
+    if(addresses.length === 0) return;
+    const cfg = NETWORKS[network];
+    try{
+      const url = cfg.goplusType === 'solana'
+        ? (GOPLUS_SOLANA_URL + '?contract_addresses=' + addresses.join(','))
+        : (GOPLUS_EVM_BASE + '/' + cfg.goplusChainId + '?contract_addresses=' + addresses.join(','));
+      const json = await fetchJSON(url);
+      const result = json && json.result;
+      if(!result) return;
+      Object.keys(result).forEach(function(addr){
+        const sec = result[addr];
+        if(!sec) return;
+        let lpLockedPct = null;
+        if(Array.isArray(sec.lp_holders)){
+          let sum = 0;
+          sec.lp_holders.forEach(function(h){
+            if(h && (h.is_locked === 1 || h.is_locked === '1')){
+              sum += parseFloat(h.percent) || 0;
+            }
+          });
+          if(sum > 0) lpLockedPct = Math.round(sum * 100);
+        }
+        // EVM fields are simple '1'/'0' strings; Solana's fields sometimes come back as
+        // nested objects (e.g. { status: '1' }) — this checks both shapes defensively.
+        function flag(v){
+          if(v === '1' || v === 1 || v === true) return true;
+          if(v && typeof v === 'object' && (v.status === '1' || v.status === 1)) return true;
+          return false;
+        }
+        state.securityCache[network + ':' + addr.toLowerCase()] = {
+          mintable: flag(sec.is_mintable) || flag(sec.mintable),
+          blacklist: flag(sec.is_blacklisted) || flag(sec.transfer_pausable),
+          lpLockedPct: lpLockedPct,
+          holderCount: sec.holder_count != null ? parseInt(sec.holder_count, 10) : null
+        };
+      });
+    }catch(err){
+      console.warn('Hoodlum: sécurité indisponible', err);
+    }
+  }
+
+  async function enrichPools(network, pools){
+    const needed = [];
+    pools.forEach(function(p){
+      if(!p.baseAddress) return;
+      const key = network + ':' + p.baseAddress.toLowerCase();
+      if(!(key in state.imageCache) || !(key in state.securityCache)){
+        if(needed.indexOf(p.baseAddress) === -1) needed.push(p.baseAddress);
+      }
+    });
+    const batch = needed.slice(0, 30);
+    if(batch.length === 0) return;
+    await Promise.allSettled([ fetchImagesFor(network, batch), fetchSecurityFor(network, batch) ]);
+  }
+
+  async function refresh(tab, silent){
+    if(state.refreshing) return;
+    state.refreshing = true;
+    const network = state.network;
+    if(!silent) state.loading = true;
+    render();
+    try{
+      const pools = await fetchPools(tab);
+      const isFirstLoad = state.pools[tab] === null;
+      if(!state.seenIds[tab]) state.seenIds[tab] = new Set();
+      pools.forEach(function(p){ p._isNew = !isFirstLoad && !state.seenIds[tab].has(p.id); });
+      pools.forEach(function(p){ state.seenIds[tab].add(p.id); });
+      state.pools[tab] = pools;
+      state.rawCount[tab] = pools.length;
+      state.error[tab] = null;
+      state.lastUpdated[tab] = new Date();
+      enrichPools(network, pools).then(render);
+    }catch(err){
+      console.error('Hoodlum fetch error:', err);
+      state.error[tab] = (err && err.message) ? err.message : 'Erreur réseau';
+    }
+    state.loading = false;
+    state.refreshing = false;
+    render();
+  }
+
+  function switchNetwork(net){
+    if(state.network === net) return;
+    state.network = net;
+    state.pools = { trending: null, new: null };
+    state.rawCount = { trending: null, new: null };
+    state.error = { trending: null, new: null };
+    state.lastUpdated = { trending: null, new: null };
+    state.seenIds = {};
+    state.filters.platforms.clear();
+    render();
+    refresh(state.tab, false);
+  }
+
+  function getAvailablePlatforms(){
+    const tab = state.tab;
+    const pools = state.pools[tab] || [];
+    const set = new Set();
+    pools.forEach(function(p){ if(p.dexId) set.add(p.dexId); });
+    return Array.from(set).sort();
+  }
+
+  function activeFilterCount(){
+    const f = state.filters;
+    let n = 0;
+    if(f.search) n++;
+    if(f.minLiquidity > 0) n++;
+    if(f.minVolume > 0) n++;
+    if(f.minChange24h !== null) n++;
+    if(f.maxAgeMinutes !== null) n++;
+    if(f.minBuyPressure !== null) n++;
+    if(f.maxFdv !== null) n++;
+    if(f.minBuys1h !== null) n++;
+    if(f.minHolders !== null) n++;
+    if(f.platforms.size > 0) n++;
+    return n;
+  }
+
+  function avatarHTML(pool){
+    const key = pool.baseAddress ? state.network + ':' + pool.baseAddress.toLowerCase() : '';
+    const img = key ? state.imageCache[key] : null;
+    if(img){
+      return '<img class="avatar" src="' + img + '" alt="" onerror="this.outerHTML=\'' +
+        avatarFallbackHTML(pool).replace(/'/g, "\\'") + '\'">';
+    }
+    return avatarFallbackHTML(pool);
+  }
+
+  function avatarFallbackHTML(pool){
+    const letter = escapeHTML((pool.base || '?').charAt(0).toUpperCase());
+    const color = hashColor(pool.base || pool.id || 'x');
+    return '<div class="avatar-fallback" style="background:' + color + '">' + letter + '</div>';
+  }
+
+  function rowHTML(pool, isNew){
+    const risk = riskBadge(pool.liquidity);
+    const bp = buyPressure(pool.txH1);
+    const changeCls = pool.change24h >= 0 ? 'pos' : 'neg';
+    const changeSign = pool.change24h >= 0 ? '+' : '';
+    const change1hCls = pool.change1h >= 0 ? 'pos' : 'neg';
+    const change1hSign = pool.change1h >= 0 ? '+' : '';
+    const href = pool.address
+      ? 'https://www.geckoterminal.com/' + state.network + '/pools/' + pool.address
+      : '#';
+    const secKey = pool.baseAddress ? state.network + ':' + pool.baseAddress.toLowerCase() : '';
+    const sec = secKey ? state.securityCache[secKey] : null;
+
+    let secTags = '';
+    if(sec){
+      secTags += sec.mintable
+        ? '<span class="tag sec-bad">Mint actif</span>'
+        : '<span class="tag sec-ok">Mint désactivé</span>';
+      if(sec.lpLockedPct !== null){
+        secTags += sec.lpLockedPct >= 80
+          ? '<span class="tag sec-ok">LP verrouillée ' + sec.lpLockedPct + '%</span>'
+          : '<span class="tag sec-bad">LP verrouillée ' + sec.lpLockedPct + '%</span>';
+      }
+      if(sec.blacklist){
+        secTags += '<span class="tag sec-bad">Blacklist possible</span>';
+      }
+      if(sec.holderCount !== null){
+        secTags += '<span class="tag bp">' + sec.holderCount + ' holders</span>';
+      }
+    }
+
+    return (
+      '<a class="row' + (isNew ? ' just-in' : '') + '" data-pool-id="' + escapeHTML(pool.id) + '" href="' + href + '" target="_blank" rel="noopener">' +
+        '<div class="row-top">' +
+          avatarHTML(pool) +
+          '<div class="row-main">' +
+            '<div class="row-main-top">' +
+              '<div class="pair">' + escapeHTML(pool.base) + ' <span class="quote">/ ' + escapeHTML(pool.quote) + '</span></div>' +
+              '<div class="price">$' + formatPrice(pool.priceUsd) + '</div>' +
+            '</div>' +
+            '<div class="row-sub">' +
+              '<span class="change ' + changeCls + '">' + changeSign + pool.change24h.toFixed(1) + '% (24h)</span>' +
+              '<span class="change mini ' + change1hCls + '">' + change1hSign + pool.change1h.toFixed(1) + '% (1h)</span>' +
+              '<span class="meta">Liq ' + formatUSD(pool.liquidity) + ' · Vol ' + formatUSD(pool.volume24h) + ' · ' + formatAge(pool.createdAt) + '</span>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="row-tags">' +
+          '<span class="tag platform">' + escapeHTML(formatPlatform(pool.dexId)) + '</span>' +
+          '<span class="tag ' + risk.cls + '">' + risk.label + '</span>' +
+          (bp !== null ? '<span class="tag bp">' + bp + '% achats (1h)</span>' : '') +
+          secTags +
+        '</div>' +
+      '</a>'
+    );
+  }
+
+  function renderPlatformChips(){
+    const platforms = getAvailablePlatforms();
+    const rowHtml = ['<button class="chip' + (state.filters.platforms.size === 0 ? ' active' : '') + '" data-platform="">Toutes</button>']
+      .concat(platforms.map(function(p){
+        const active = state.filters.platforms.has(p);
+        const color = hashColor(p);
+        const style = active ? ' style="background:' + color + ';border-color:transparent;"' : '';
+        return '<button class="chip' + (active ? ' active' : '') + '" data-platform="' + escapeHTML(p) + '"' + style + '>' + escapeHTML(formatPlatform(p)) + '</button>';
+      }));
+    els.platformRow.innerHTML = rowHtml.join('');
+    els.platformRow.querySelectorAll('.chip').forEach(function(chip){
+      chip.addEventListener('click', function(){
+        const val = chip.dataset.platform;
+        if(val === ''){ state.filters.platforms.clear(); }
+        else if(state.filters.platforms.has(val)){ state.filters.platforms.delete(val); }
+        else { state.filters.platforms.add(val); }
+        render();
+      });
+    });
+
+    els.sheetPlatforms.innerHTML = rowHtml.join('');
+    els.sheetPlatforms.querySelectorAll('.chip').forEach(function(chip){
+      chip.addEventListener('click', function(){
+        const val = chip.dataset.platform;
+        if(val === ''){ state.filters.platforms.clear(); }
+        else if(state.filters.platforms.has(val)){ state.filters.platforms.delete(val); }
+        else { state.filters.platforms.add(val); }
+        render();
+      });
+    });
+  }
+
+  function render(){
+    els.networkTabs.forEach(function(t){ t.classList.toggle('active', t.dataset.network === state.network); });
+    els.networkLabel.textContent = NETWORKS[state.network].label;
+    els.tabs.forEach(function(t){ t.classList.toggle('active', t.dataset.tab === state.tab); });
+
+    const count = activeFilterCount();
+    els.filterCount.style.display = count > 0 ? 'flex' : 'none';
+    els.filterCount.textContent = count;
+
+    renderPlatformChips();
+
+    const tab = state.tab;
+    const err = state.error[tab];
+    const updated = state.lastUpdated[tab];
+    els.updatedAt.textContent = updated
+      ? ('maj ' + updated.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
+      : (state.loading ? 'chargement…' : '—');
+
+    if(err){
+      els.status.className = 'status error';
+      els.status.innerHTML = 'Impossible de charger les paires (' + escapeHTML(err) + ').' +
+        '<button id="retry-btn">Réessayer</button>';
+      const retryBtn = document.getElementById('retry-btn');
+      if(retryBtn) retryBtn.onclick = function(){ refresh(tab, false); };
+    } else {
+      els.status.className = 'status';
+      els.status.textContent = '';
+    }
+
+    const pools = state.pools[tab];
+
+    if(state.loading && !pools){
+      els.list.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
+      return;
+    }
+    if(!pools){ els.list.innerHTML = ''; return; }
+
+    const f = state.filters;
+    let filtered = pools.filter(function(p){
+      if(p.liquidity < f.minLiquidity) return false;
+      if(p.volume24h < f.minVolume) return false;
+      if(f.minChange24h !== null && p.change24h < f.minChange24h) return false;
+      if(f.maxAgeMinutes !== null && ageMinutes(p.createdAt) > f.maxAgeMinutes) return false;
+      if(f.minBuyPressure !== null){
+        const bp = buyPressure(p.txH1);
+        if(bp === null || bp < f.minBuyPressure) return false;
+      }
+      if(f.maxFdv !== null && (p.fdv === null || p.fdv > f.maxFdv)) return false;
+      if(f.minBuys1h !== null && (p.txH1.buys || 0) < f.minBuys1h) return false;
+      if(f.minHolders !== null){
+        const secKey = p.baseAddress ? state.network + ':' + p.baseAddress.toLowerCase() : '';
+        const sec = secKey ? state.securityCache[secKey] : null;
+        if(!sec || sec.holderCount === null || sec.holderCount < f.minHolders) return false;
+      }
+      if(f.platforms.size > 0 && !f.platforms.has(p.dexId)) return false;
+      if(f.search){
+        const q = f.search.toLowerCase();
+        if(p.base.toLowerCase().indexOf(q) === -1 && p.quote.toLowerCase().indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+
+    filtered.sort(function(a, b){
+      switch(state.sortBy){
+        case 'liquidity': return b.liquidity - a.liquidity;
+        case 'change': return b.change24h - a.change24h;
+        case 'new': return (b.createdAt ? b.createdAt.getTime() : 0) - (a.createdAt ? a.createdAt.getTime() : 0);
+        default: return b.volume24h - a.volume24h;
+      }
+    });
+
+    if(filtered.length === 0){
+      if(pools.length === 0){
+        els.list.innerHTML = '<div class="empty">L\'API a renvoyé 0 paire pour ' + escapeHTML(NETWORKS[state.network].label) + ' sur cet onglet en ce moment. Pas un bug — soit c\'est calme, soit l\'indexation est encore partielle.</div>';
+      } else {
+        els.list.innerHTML = '<div class="empty">' + pools.length + ' paires reçues, mais aucune ne passe tes filtres actuels. Ouvre les filtres pour les assouplir.</div>';
+      }
+      return;
+    }
+
+    els.list.innerHTML = filtered.map(function(p){ return rowHTML(p, !!p._isNew); }).join('');
+  }
+
+  // network switcher events
+  els.networkTabs.forEach(function(t){
+    t.addEventListener('click', function(){
+      switchNetwork(t.dataset.network);
+    });
+  });
+
+  // tab events
+  els.tabs.forEach(function(t){
+    t.addEventListener('click', function(){
+      state.tab = t.dataset.tab;
+      render();
+      if(!state.pools[state.tab]) refresh(state.tab, false);
+    });
+  });
+
+  els.refreshBtn.addEventListener('click', function(){ refresh(state.tab, false); });
+
+  // filter sheet open/close
+  function openSheet(){
+    els.fSearch.value = state.filters.search;
+    els.fLiquidity.value = String(state.filters.minLiquidity);
+    els.fVolume.value = String(state.filters.minVolume);
+    els.fChange.value = state.filters.minChange24h === null ? '' : String(state.filters.minChange24h);
+    els.fAge.value = state.filters.maxAgeMinutes === null ? '' : String(state.filters.maxAgeMinutes);
+    els.fBuyPressure.value = state.filters.minBuyPressure === null ? '' : String(state.filters.minBuyPressure);
+    els.fFdv.value = state.filters.maxFdv === null ? '' : String(state.filters.maxFdv);
+    els.fBuys1h.value = state.filters.minBuys1h === null ? '' : String(state.filters.minBuys1h);
+    els.fHolders.value = state.filters.minHolders === null ? '' : String(state.filters.minHolders);
+    els.fSort.value = state.sortBy;
+    els.backdrop.classList.add('open');
+    els.sheet.classList.add('open');
+  }
+  function closeSheet(){
+    els.backdrop.classList.remove('open');
+    els.sheet.classList.remove('open');
+  }
+  els.filterBtn.addEventListener('click', openSheet);
+  els.backdrop.addEventListener('click', closeSheet);
+
+  els.fSearch.addEventListener('input', function(e){ state.filters.search = e.target.value; render(); });
+  els.fLiquidity.addEventListener('change', function(e){ state.filters.minLiquidity = parseInt(e.target.value, 10) || 0; render(); });
+  els.fVolume.addEventListener('change', function(e){ state.filters.minVolume = parseInt(e.target.value, 10) || 0; render(); });
+  els.fChange.addEventListener('change', function(e){ state.filters.minChange24h = e.target.value === '' ? null : parseFloat(e.target.value); render(); });
+  els.fAge.addEventListener('change', function(e){ state.filters.maxAgeMinutes = e.target.value === '' ? null : parseInt(e.target.value, 10); render(); });
+  els.fBuyPressure.addEventListener('change', function(e){ state.filters.minBuyPressure = e.target.value === '' ? null : parseInt(e.target.value, 10); render(); });
+  els.fFdv.addEventListener('change', function(e){ state.filters.maxFdv = e.target.value === '' ? null : parseInt(e.target.value, 10); render(); });
+  els.fBuys1h.addEventListener('change', function(e){ state.filters.minBuys1h = e.target.value === '' ? null : parseInt(e.target.value, 10); render(); });
+  els.fHolders.addEventListener('change', function(e){ state.filters.minHolders = e.target.value === '' ? null : parseInt(e.target.value, 10); render(); });
+  els.fSort.addEventListener('change', function(e){ state.sortBy = e.target.value; render(); });
+
+  els.fReset.addEventListener('click', function(){
+    state.filters = { search: '', minLiquidity: 0, minVolume: 0, minChange24h: null, maxAgeMinutes: null, minBuyPressure: null, maxFdv: null, minBuys1h: null, minHolders: null, platforms: new Set() };
+    state.sortBy = 'new';
+    openSheet();
+    render();
+  });
+  els.fApply.addEventListener('click', closeSheet);
+
+  setInterval(function(){
+    if(document.visibilityState === 'visible'){
+      refresh(state.tab, true);
+    }
+  }, REFRESH_MS);
+
+  refresh('trending', false);
+})();
+</script>
+</body>
+</html>
