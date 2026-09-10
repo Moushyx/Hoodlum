@@ -410,7 +410,7 @@
     <button class="icon-btn" id="chart-modal-close">✕</button>
   </div>
   <div class="chart-modal-body">
-    <iframe id="chart-modal-iframe" src="" title="Graphique du token" sandbox="allow-scripts allow-same-origin allow-forms" allow="clipboard-write"></iframe>
+    <iframe id="chart-modal-iframe" src="" title="Graphique du token" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox" allow="clipboard-write"></iframe>
   </div>
   <div class="chart-modal-footer">
     <a id="chart-modal-external" href="#" target="_blank" rel="noopener">Ouvrir sur GeckoTerminal (trading complet) ↗</a>
@@ -988,7 +988,7 @@ window.addEventListener('error', function(e){
   // chart modal
   function openChartModal(network, address, pairLabel){
     const chartUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address +
-      '?embed=1&info=0&swaps=0&light_chart=0&chart_type=price&resolution=15m';
+      '?embed=1&info=0&swaps=1&light_chart=0&chart_type=price&resolution=15m&bg_color=0A0A10';
     const externalUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address;
     els.chartModalTitle.textContent = pairLabel;
     els.chartModalIframe.src = chartUrl;
