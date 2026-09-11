@@ -1883,7 +1883,7 @@ window.addEventListener('error', function(e){
     state.lwChart = LightweightCharts.createChart(els.chartCanvas, {
       layout: { background: { color: 'transparent' }, textColor: '#8B8B9E', fontFamily: 'IBM Plex Mono, monospace', fontSize: 11 },
       grid: { vertLines: { color: 'rgba(255,255,255,0.05)' }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
-      timeScale: { timeVisible: true, secondsVisible: true, borderColor: 'rgba(255,255,255,0.09)' },
+      timeScale: { timeVisible: true, secondsVisible: true, borderColor: 'rgba(255,255,255,0.09)', barSpacing: 10 },
       rightPriceScale: { borderColor: 'rgba(255,255,255,0.09)' },
       autoSize: true
     });
@@ -1902,13 +1902,15 @@ window.addEventListener('error', function(e){
     state.currentCandles = [seed];
   }
 
-  async function loadChart(pool, prefetchedTrades){
+  async function loadChart(pool, prefetchedTrades, silent){
     ensureChart();
-    els.chartLoading.classList.remove('hidden');
-    els.chartLoading.textContent = 'Chargement du graphique…';
+    if(!silent){
+      els.chartLoading.classList.remove('hidden');
+      els.chartLoading.textContent = 'Chargement du graphique…';
+    }
     clearTimeout(state._chartLoadTimeout);
     state._chartLoadTimeout = setTimeout(function(){
-      els.chartLoading.textContent = 'Le graphique met du temps à répondre — vérifie ta connexion, ou touche "Acheter / vendre sur GeckoTerminal" en bas pour voir la paire directement.';
+      if(!silent) els.chartLoading.textContent = 'Le graphique met du temps à répondre — vérifie ta connexion, ou touche "Acheter / vendre sur GeckoTerminal" en bas pour voir la paire directement.';
     }, 8000);
     const fmt = priceFormatFor(pool.priceUsd);
     state.lwSeries.applyOptions({ priceFormat: { type: 'price', precision: fmt.precision, minMove: fmt.minMove } });
@@ -1923,6 +1925,7 @@ window.addEventListener('error', function(e){
     clearTimeout(state._chartLoadTimeout);
     els.chartLoading.classList.add('hidden');
     if(!candles || candles.length === 0){
+      if(silent) return; // keep whatever cached/seeded view is already showing
       if(pool.priceUsd){
         seedFromPrice(pool);
       } else {
@@ -1936,7 +1939,9 @@ window.addEventListener('error', function(e){
     }
     state.lwSeries.setData(candles);
     state.currentCandles = candles;
-    state.lwChart.timeScale().fitContent();
+    if(!state.candleCache) state.candleCache = {};
+    state.candleCache[state.chartTimeframe] = candles;
+    if(candles.length >= 15) state.lwChart.timeScale().fitContent();
   }
 
   function updateLiveCandle(priceUsd){
@@ -1960,7 +1965,15 @@ window.addEventListener('error', function(e){
     if(!state.currentModalPool || state.chartTimeframe === tf) return;
     state.chartTimeframe = tf;
     document.querySelectorAll('.tf-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.tf === tf); });
-    loadChart(state.currentModalPool);
+    if(state.candleCache && state.candleCache[tf] && state.candleCache[tf].length > 0){
+      const cached = state.candleCache[tf];
+      state.lwSeries.setData(cached);
+      state.currentCandles = cached;
+      if(cached.length >= 15) state.lwChart.timeScale().fitContent();
+      loadChart(state.currentModalPool, null, true); // refresh quietly, no spinner
+    } else {
+      loadChart(state.currentModalPool);
+    }
   }
 
   function tradesFeedShellHTML(){
@@ -2029,6 +2042,7 @@ window.addEventListener('error', function(e){
 
   function openChartModal(pool, pairLabel){
     state.chartModalOpen = true;
+    state.candleCache = {};
     els.chartModalScroll.scrollTop = 0;
     const network = pool.network, address = pool.address;
     const externalUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address;
