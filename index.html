@@ -267,7 +267,8 @@
     padding:14px 16px; background:var(--surface-solid); border-bottom:1px solid var(--border);
   }
   .chart-modal-title{ font-weight:700; font-size:15px; }
-  .chart-modal-body{ flex:1; background:#0A0A10; display:flex; flex-direction:column; overflow-y:auto; -webkit-overflow-scrolling:touch; position:relative; }
+  .chart-modal-scroll{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; display:flex; flex-direction:column; }
+  .chart-modal-body{ flex:0 0 auto; background:#0A0A10; position:relative; }
   .chart-modal-body iframe{ width:100%; flex:0 0 auto; height:min(62vh, 480px); min-height:340px; border:0; }
   .chart-loading{
     position:absolute; top:0; left:0; right:0; height:min(62vh, 480px); min-height:340px;
@@ -582,25 +583,27 @@
     <div class="chart-modal-title" id="chart-modal-title">Graphique</div>
     <button class="icon-btn" id="chart-modal-close">✕</button>
   </div>
-  <div class="score-panel" id="score-panel"></div>
-  <div class="paper-buy-row" id="paper-buy-row">
-    <span class="paper-buy-label" id="paper-cash-label">Solde fictif : 1 000 $</span>
-    <button class="paper-buy-btn" data-pct="0.1">Acheter 10%</button>
-    <button class="paper-buy-btn" data-pct="0.25">Acheter 25%</button>
-    <button class="paper-buy-btn" data-pct="0.5">Acheter 50%</button>
-    <button class="paper-buy-btn" data-pct="1">Acheter tout</button>
-  </div>
-  <div class="paper-buy-row" id="paper-sell-section" style="display:none;">
-    <span class="paper-buy-label">Ta position — vendre :</span>
-    <button class="paper-buy-btn sell" data-modal-sell-pct="0.25">Vendre 25%</button>
-    <button class="paper-buy-btn sell" data-modal-sell-pct="0.5">Vendre 50%</button>
-    <button class="paper-buy-btn sell" data-modal-sell-pct="1">Tout vendre</button>
-  </div>
-  <div class="chart-modal-body">
-    <div class="chart-loading" id="chart-loading">Chargement du graphique…</div>
-    <div class="position-badge" id="position-badge" style="display:none;"></div>
-    <iframe id="chart-modal-iframe" src="" title="Graphique du token" scrolling="no" sandbox="allow-scripts allow-same-origin allow-forms" allow="clipboard-write"></iframe>
+  <div class="chart-modal-scroll">
+    <div class="score-panel" id="score-panel"></div>
     <div id="token-detail-wrap"></div>
+    <div class="paper-buy-row" id="paper-buy-row">
+      <span class="paper-buy-label" id="paper-cash-label">Solde fictif : 1 000 $</span>
+      <button class="paper-buy-btn" data-pct="0.1">Acheter 10%</button>
+      <button class="paper-buy-btn" data-pct="0.25">Acheter 25%</button>
+      <button class="paper-buy-btn" data-pct="0.5">Acheter 50%</button>
+      <button class="paper-buy-btn" data-pct="1">Acheter tout</button>
+    </div>
+    <div class="paper-buy-row" id="paper-sell-section" style="display:none;">
+      <span class="paper-buy-label">Ta position — vendre :</span>
+      <button class="paper-buy-btn sell" data-modal-sell-pct="0.25">Vendre 25%</button>
+      <button class="paper-buy-btn sell" data-modal-sell-pct="0.5">Vendre 50%</button>
+      <button class="paper-buy-btn sell" data-modal-sell-pct="1">Tout vendre</button>
+    </div>
+    <div class="chart-modal-body">
+      <div class="chart-loading" id="chart-loading">Chargement du graphique…</div>
+      <div class="position-badge" id="position-badge" style="display:none;"></div>
+      <iframe id="chart-modal-iframe" src="" title="Graphique du token" scrolling="no" sandbox="allow-scripts allow-same-origin allow-forms" allow="clipboard-write"></iframe>
+    </div>
   </div>
   <div class="chart-modal-footer">
     <a id="chart-modal-external" href="#" target="_blank" rel="noopener">Acheter / vendre sur GeckoTerminal ↗</a>
@@ -1810,6 +1813,7 @@ window.addEventListener('error', function(e){
     state._chartPositionInterval = setInterval(function(){
       fetchSinglePool(network, address).then(function(fresh){
         if(fresh){
+          state.currentModalPool = fresh;
           renderPositionBadge(fresh);
           const secKey = fresh.baseAddress ? network + ':' + fresh.baseAddress.toLowerCase() : '';
           const freshSec = secKey ? state.securityCache[secKey] : null;
@@ -1821,7 +1825,7 @@ window.addEventListener('error', function(e){
           });
         }
       });
-    }, 10000);
+    }, 6000);
   }
   function closeChartModal(){
     els.chartModal.classList.remove('open');
