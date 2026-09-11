@@ -26,13 +26,6 @@
     --gradient-warm:linear-gradient(135deg, var(--pink), var(--purple));
     --display:'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
     --mono:'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
-    /* Jupiter Plugin theme (RGB triples, no rgb() wrapper — per Jupiter's docs) */
-    --jupiter-plugin-primary: 168, 85, 247;
-    --jupiter-plugin-background: 10, 10, 16;
-    --jupiter-plugin-primaryText: 245, 245, 250;
-    --jupiter-plugin-warning: 251, 191, 36;
-    --jupiter-plugin-interactive: 30, 30, 42;
-    --jupiter-plugin-module: 20, 20, 30;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -279,8 +272,6 @@
     background:#0A0A10; pointer-events:none; transition:opacity .2s ease;
   }
   .chart-loading.hidden{ opacity:0; }
-  #jupiter-plugin-wrap{ flex:0 0 auto; padding:10px 14px; background:var(--surface-solid); border-top:1px solid var(--border); }
-  #jupiter-plugin{ max-width:360px; margin:0 auto; }
   .swap-hint{ text-align:center; font-size:11.5px; color:var(--text-muted); margin:0 0 10px; }
   .score-panel{
     padding:8px 16px; background:var(--surface-solid); border-bottom:1px solid var(--border);
@@ -288,9 +279,31 @@
   .score-panel-text{ display:flex; align-items:baseline; gap:8px; }
   .score-panel-total{ font-size:17px; font-weight:800; font-family:var(--mono); }
   .score-panel-caption{ font-size:11px; color:var(--text-muted); }
-  .score-panel .score-bar{ margin-top:6px; }
-    padding:12px 16px; background:var(--surface-solid); border-top:1px solid var(--border);
+  .score-toggle{
+    background:none; border:none; color:var(--cyan); font-family:var(--display);
+    font-size:11.5px; font-weight:600; padding:0; cursor:pointer; margin-left:auto;
   }
+  .score-detail{ display:none; margin-top:12px; flex-direction:column; }
+  .score-detail.open{ display:flex; }
+  .score-radar-wrap{ display:flex; justify-content:center; margin-bottom:8px; }
+  .score-detail-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:8px 0; border-bottom:1px solid var(--border); font-size:12.5px;
+  }
+  .score-detail-row:last-of-type{ border-bottom:none; }
+  .sd-label{ color:var(--text-muted); display:flex; align-items:center; gap:7px; }
+  .sd-dot{ width:7px; height:7px; border-radius:50%; flex:0 0 auto; }
+  .sd-dot.on-high{ background:var(--green); }
+  .sd-dot.on-mid{ background:var(--yellow); }
+  .sd-dot.on-low{ background:var(--red); }
+  .sd-dot.on-unknown{ background:var(--text-muted); opacity:0.4; }
+  .sd-value{ font-family:var(--mono); font-weight:700; }
+  .score-summary{
+    margin-top:8px; padding-top:10px; border-top:1px solid var(--border);
+    font-size:12px; color:var(--text-muted); line-height:1.5;
+  }
+  .score-summary strong{ color:var(--text); }
+  .score-panel .score-bar{ margin-top:6px; }
   .chart-modal-footer a{
     display:block; text-align:center;
     background:var(--gradient); color:#0A0A10; text-decoration:none;
@@ -322,7 +335,6 @@
   }
   .paper-toast.show{ opacity:1; }
 </style>
-<script src="https://plugin.jup.ag/plugin-v1.js" data-preload defer></script>
 </head>
 <body>
 <div class="app">
@@ -554,10 +566,6 @@
     <div class="chart-loading" id="chart-loading">Chargement du graphique…</div>
     <div class="position-badge" id="position-badge" style="display:none;"></div>
     <iframe id="chart-modal-iframe" src="" title="Graphique du token" scrolling="no" sandbox="allow-scripts allow-same-origin allow-forms" allow="clipboard-write"></iframe>
-    <div id="jupiter-plugin-wrap" style="display:none;">
-      <p class="swap-hint">Swap Jupiter — connecte ton wallet ci-dessous</p>
-      <div id="jupiter-plugin"></div>
-    </div>
   </div>
   <div class="chart-modal-footer">
     <a id="chart-modal-external" href="#" target="_blank" rel="noopener">Acheter / vendre sur GeckoTerminal ↗</a>
@@ -655,7 +663,6 @@ window.addEventListener('error', function(e){
     chartModalExternal: document.getElementById('chart-modal-external'),
     chartModalClose: document.getElementById('chart-modal-close'),
     chartLoading: document.getElementById('chart-loading'),
-    jupiterWrap: document.getElementById('jupiter-plugin-wrap'),
     scorePanel: document.getElementById('score-panel'),
     alertBtn: document.getElementById('alert-btn'),
     alertCount: document.getElementById('alert-count'),
@@ -1162,6 +1169,38 @@ window.addEventListener('error', function(e){
     );
   }
 
+  function scoreDetailHTML(pool, sec, parts){
+    const bp = buyPressure(pool.txH1);
+    const tierOf = function(v){ return v === null ? 'on-unknown' : (v >= 70 ? 'on-high' : v >= 40 ? 'on-mid' : 'on-low'); };
+    const rows = [
+      { label: 'Liquidité', value: formatUSD(pool.liquidity), tier: parts.liq },
+      { label: 'Mint', value: sec ? (sec.mintable ? 'Actif' : 'Désactivé') : 'Inconnu', tier: parts.mint },
+      { label: 'LP verrouillée', value: (sec && sec.lpLockedPct !== null) ? sec.lpLockedPct + '%' : 'Inconnu', tier: parts.lp },
+      { label: 'Pression d\'achat (1h)', value: bp !== null ? bp + '%' : 'Inconnu', tier: parts.buy },
+      { label: 'Holders', value: (sec && sec.holderCount !== null) ? sec.holderCount : 'Inconnu', tier: parts.holders }
+    ];
+    const known = rows.filter(function(r){ return r.tier !== null; });
+    const positive = known.filter(function(r){ return r.tier >= 70; }).length;
+    let verdict = 'pas assez de données pour se prononcer';
+    if(known.length > 0){
+      if(positive === known.length) verdict = 'tous les critères connus sont dans la zone favorable';
+      else if(positive === 0) verdict = 'aucun critère connu n\'est dans la zone favorable — prudence';
+      else verdict = 'profil mitigé — regarde en détail avant de te décider';
+    }
+    return (
+      '<div class="score-detail" id="score-detail-body">' +
+        '<div class="score-radar-wrap">' + radarSVG(parts) + '</div>' +
+        rows.map(function(r){
+          return '<div class="score-detail-row">' +
+            '<span class="sd-label"><span class="sd-dot ' + tierOf(r.tier) + '"></span>' + escapeHTML(r.label) + '</span>' +
+            '<span class="sd-value">' + escapeHTML(String(r.value)) + '</span>' +
+          '</div>';
+        }).join('') +
+        '<div class="score-summary"><strong>' + known.length + '/5 critères connus</strong>, ' + positive + ' en zone favorable — ' + verdict + '. Indicatif seulement, pas un conseil d\'achat.</div>' +
+      '</div>'
+    );
+  }
+
   function scoreBarHTML(parts){
     const order = [
       { key: 'liq', label: 'Liq' },
@@ -1614,7 +1653,7 @@ window.addEventListener('error', function(e){
   }
 
   function openChartModal(pool, pairLabel){
-    const network = pool.network, address = pool.address, baseAddress = pool.baseAddress;
+    const network = pool.network, address = pool.address;
     const chartUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address +
       '?embed=1&info=0&swaps=0&light_chart=0&chart_type=price&resolution=1m&bg_color=0A0A10';
     const externalUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address;
@@ -1637,26 +1676,6 @@ window.addEventListener('error', function(e){
         if(fresh) renderPositionBadge(fresh);
       });
     }, 10000);
-
-    if(network === 'solana' && baseAddress && window.Jupiter){
-      els.jupiterWrap.style.display = 'block';
-      try{
-        window.Jupiter.init({
-          displayMode: 'integrated',
-          integratedTargetId: 'jupiter-plugin',
-          containerStyles: { maxHeight: '380px', borderRadius: '14px' },
-          formProps: {
-            initialOutputMint: baseAddress,
-            fixedMint: baseAddress
-          }
-        });
-      }catch(err){
-        console.warn('Hoodlum: Jupiter Plugin indisponible', err);
-        els.jupiterWrap.style.display = 'none';
-      }
-    } else {
-      els.jupiterWrap.style.display = 'none';
-    }
   }
   function closeChartModal(){
     els.chartModal.classList.remove('open');
@@ -1693,7 +1712,16 @@ window.addEventListener('error', function(e){
       '<div class="score-panel-text">' +
         '<span class="score-panel-total">' + (score.total === null ? '—' : score.total + '/100') + '</span>' +
         '<span class="score-panel-caption">score de confiance</span>' +
-      '</div>' + scoreBarHTML(score.parts);
+        '<button class="score-toggle" id="score-toggle-btn">Voir le détail ▾</button>' +
+      '</div>' + scoreBarHTML(score.parts) + scoreDetailHTML(pool, sec, score.parts);
+    const toggleBtn = document.getElementById('score-toggle-btn');
+    const detailBody = document.getElementById('score-detail-body');
+    if(toggleBtn && detailBody){
+      toggleBtn.addEventListener('click', function(){
+        const isOpen = detailBody.classList.toggle('open');
+        toggleBtn.textContent = isOpen ? 'Masquer le détail ▲' : 'Voir le détail ▾';
+      });
+    }
     openChartModal(pool, row.dataset.pair);
   });
   els.chartModalClose.addEventListener('click', closeChartModal);
