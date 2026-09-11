@@ -345,6 +345,13 @@
     color:var(--text-muted); font-family:var(--mono); font-size:11.5px; cursor:pointer;
   }
   .td-address.copied{ color:var(--green); border-color:rgba(52,211,153,0.5); }
+  .tf-strip{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px; }
+  .tf-chip{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 6px; text-align:center; }
+  .tf-chip-label{ font-size:9.5px; color:var(--text-muted); font-family:var(--mono); }
+  .buysell-bar{ display:flex; height:8px; border-radius:4px; overflow:hidden; margin-bottom:6px; }
+  .bs-buy{ background:var(--green); }
+  .bs-sell{ background:var(--red); }
+  .buysell-labels{ display:flex; justify-content:space-between; font-size:11px; font-family:var(--mono); font-weight:700; }
   .trades-feed{ padding:14px 16px 16px; background:var(--surface-solid); border-top:1px solid var(--border); }
   .trade-row{
     display:grid; grid-template-columns:1.1fr 1fr 1fr 1.1fr 0.8fr;
@@ -847,6 +854,7 @@ window.addEventListener('error', function(e){
       change24h: parseFloat(pc.h24) || 0,
       change1h: parseFloat(pc.h1) || 0,
       change5m: parseFloat(pc.m5) || 0,
+      change6h: parseFloat(pc.h6) || 0,
       volume1h: parseFloat(vol.h1) || 0,
       volume6h: parseFloat(vol.h6) || 0,
       txH1: tx.h1 || { buys: 0, sells: 0 },
@@ -1315,6 +1323,8 @@ window.addEventListener('error', function(e){
     const shortAddr = pool.address ? (pool.address.slice(0, 6) + '…' + pool.address.slice(-4)) : '—';
     const changeCls = pool.change24h >= 0 ? 'pos' : 'neg';
     const changeSign = pool.change24h >= 0 ? '+' : '';
+    const totalTx1h = (bpH1.buys || 0) + (bpH1.sells || 0);
+    const buyPct1h = totalTx1h ? Math.round((bpH1.buys || 0) / totalTx1h * 100) : 50;
 
     function group(title, items){
       return (
@@ -1329,11 +1339,20 @@ window.addEventListener('error', function(e){
       );
     }
 
+    function tfChip(label, value){
+      const cls = value >= 0 ? 'pos' : 'neg';
+      const sign = value >= 0 ? '+' : '';
+      return '<div class="tf-chip"><span class="tf-chip-label">' + label + '</span><span class="change ' + cls + '" style="display:inline-block;margin-top:3px;">' + sign + value.toFixed(1) + '%</span></div>';
+    }
+
     return (
       '<div class="token-detail">' +
         '<div class="token-detail-hero">' +
           '<div class="td-hero-price">$' + formatPrice(pool.priceUsd) + '</div>' +
           '<div class="change ' + changeCls + '" style="font-size:13px;">' + changeSign + pool.change24h.toFixed(1) + '% · 24h</div>' +
+        '</div>' +
+        '<div class="tf-strip">' +
+          tfChip('5M', pool.change5m) + tfChip('1H', pool.change1h) + tfChip('6H', pool.change6h) + tfChip('24H', pool.change24h) +
         '</div>' +
         group('Marché', [
           { label: 'Liquidité', value: formatUSD(pool.liquidity) },
@@ -1343,12 +1362,15 @@ window.addEventListener('error', function(e){
           { label: 'Market cap', value: pool.marketCap !== null ? formatUSD(pool.marketCap) : 'Non vérifié' },
           { label: 'Âge', value: formatAge(pool.createdAt) }
         ]) +
-        group('Activité', [
-          { label: 'Achats (1h)', value: bpH1.buys || 0 },
-          { label: 'Ventes (1h)', value: bpH1.sells || 0 },
-          { label: 'Achats (24h)', value: bpH24.buys || 0 },
-          { label: 'Ventes (24h)', value: bpH24.sells || 0 }
-        ]) +
+        '<div class="td-group">' +
+          '<div class="td-group-title">Activité (1h)</div>' +
+          '<div class="buysell-bar"><span class="bs-buy" style="width:' + buyPct1h + '%;"></span><span class="bs-sell" style="width:' + (100 - buyPct1h) + '%;"></span></div>' +
+          '<div class="buysell-labels"><span class="pos">' + (bpH1.buys || 0) + ' achats</span><span class="neg">' + (bpH1.sells || 0) + ' ventes</span></div>' +
+          '<div class="token-detail-grid" style="margin-top:10px;">' +
+            '<div class="td-item"><span class="td-label">Achats (24h)</span><span class="td-value">' + (bpH24.buys || 0) + '</span></div>' +
+            '<div class="td-item"><span class="td-label">Ventes (24h)</span><span class="td-value">' + (bpH24.sells || 0) + '</span></div>' +
+          '</div>' +
+        '</div>' +
         group('Sécurité & frais', [
           { label: 'Plateforme', value: formatPlatform(pool.dexId) },
           { label: 'Taxe achat', value: (sec && sec.buyTax !== null) ? sec.buyTax + '%' : 'Inconnue' },
@@ -1846,7 +1868,7 @@ window.addEventListener('error', function(e){
       const json = await fetchJSON(url);
       const list = (json.data && json.data.attributes && json.data.attributes.ohlcv_list) || [];
       return list.map(function(c){
-        return { time: c[0], open: c[1], high: c[2], low: c[3], close: c[4] };
+        return { time: c[0], value: c[4] };
       }).sort(function(a, b){ return a.time - b.time; });
     }catch(err){
       console.warn('Hoodlum: OHLCV indisponible', err);
@@ -1872,15 +1894,8 @@ window.addEventListener('error', function(e){
       const price = priceFromTrade(a, baseAddress);
       if(!price || !a.block_timestamp) return;
       const ts = Math.floor(new Date(a.block_timestamp).getTime() / 1000);
-      if(!buckets[ts]){
-        buckets[ts] = { time: ts, open: price, high: price, low: price, close: price };
-        order.push(ts);
-      } else {
-        const b = buckets[ts];
-        b.high = Math.max(b.high, price);
-        b.low = Math.min(b.low, price);
-        b.close = price;
-      }
+      if(!buckets[ts]) order.push(ts);
+      buckets[ts] = { time: ts, value: price };
     });
     return order.map(function(ts){ return buckets[ts]; });
   }
@@ -1894,9 +1909,10 @@ window.addEventListener('error', function(e){
       rightPriceScale: { borderColor: 'rgba(255,255,255,0.09)' },
       autoSize: true
     });
-    state.lwSeries = state.lwChart.addSeries(LightweightCharts.CandlestickSeries, {
-      upColor: '#34D399', downColor: '#FB7185', borderVisible: false,
-      wickUpColor: '#34D399', wickDownColor: '#FB7185'
+    state.lwSeries = state.lwChart.addSeries(LightweightCharts.AreaSeries, {
+      lineColor: '#A855F7', lineWidth: 2,
+      topColor: 'rgba(168,85,247,0.32)', bottomColor: 'rgba(34,211,238,0.02)',
+      priceLineColor: '#22D3EE'
     });
     return state.lwChart;
   }
@@ -1918,7 +1934,7 @@ window.addEventListener('error', function(e){
   function seedFromPrice(pool){
     const bucketSeconds = bucketSecondsFor(state.chartTimeframe);
     const nowBucket = Math.floor(Date.now() / 1000 / bucketSeconds) * bucketSeconds;
-    const seed = { time: nowBucket, open: pool.priceUsd, high: pool.priceUsd, low: pool.priceUsd, close: pool.priceUsd };
+    const seed = { time: nowBucket, value: pool.priceUsd };
     state.lwSeries.setData([seed]);
     state.currentCandles = [seed];
     applyReasonableView(1);
@@ -1974,14 +1990,12 @@ window.addEventListener('error', function(e){
     const nowBucket = Math.floor(Date.now() / 1000 / bucketSeconds) * bucketSeconds;
     const last = state.currentCandles[state.currentCandles.length - 1];
     if(nowBucket === last.time){
-      last.high = Math.max(last.high, priceUsd);
-      last.low = Math.min(last.low, priceUsd);
-      last.close = priceUsd;
+      last.value = priceUsd;
       state.lwSeries.update(last);
     } else if(nowBucket > last.time){
-      const newCandle = { time: nowBucket, open: last.close, high: priceUsd, low: priceUsd, close: priceUsd };
-      state.currentCandles.push(newCandle);
-      state.lwSeries.update(newCandle);
+      const newPoint = { time: nowBucket, value: priceUsd };
+      state.currentCandles.push(newPoint);
+      state.lwSeries.update(newPoint);
     }
   }
 
