@@ -362,6 +362,13 @@
     100%{ background:transparent; }
   }
   .trade-row.just-in{ animation:tradeFlash 1.8s ease-out; border-radius:6px; }
+  .tf-row{ display:flex; gap:6px; padding:10px 16px; background:var(--surface-solid); border-bottom:1px solid var(--border); }
+  .tf-btn{
+    flex:1; padding:7px 4px; font-size:12px; font-weight:700; font-family:var(--mono);
+    background:var(--surface); border:1px solid var(--border); border-radius:8px;
+    color:var(--text-muted); cursor:pointer;
+  }
+  .tf-btn.active{ background:var(--gradient); color:#0A0A10; border-color:transparent; }
   .position-badge{
     position:absolute; top:10px; left:10px; z-index:5;
     background:rgba(10,10,16,0.85); backdrop-filter:blur(6px);
@@ -624,6 +631,13 @@
       <button class="paper-buy-btn sell" data-modal-sell-pct="0.5">Vendre 50%</button>
       <button class="paper-buy-btn sell" data-modal-sell-pct="1">Tout vendre</button>
     </div>
+    <div class="tf-row" id="tf-row">
+      <button class="tf-btn active" data-tf="1s">1s</button>
+      <button class="tf-btn" data-tf="1m">1m</button>
+      <button class="tf-btn" data-tf="5m">5m</button>
+      <button class="tf-btn" data-tf="15m">15m</button>
+      <button class="tf-btn" data-tf="1h">1h</button>
+    </div>
     <div class="chart-modal-body">
       <div class="chart-loading" id="chart-loading">Chargement du graphique…</div>
       <div class="position-badge" id="position-badge" style="display:none;"></div>
@@ -693,7 +707,8 @@ window.addEventListener('error', function(e){
     paper: loadJSON('hoodlum_paper', { cash: 1000, positions: [], realizedPnl: 0, history: [] }),
     paperLoading: false,
     currentModalPool: null,
-    chartModalOpen: false
+    chartModalOpen: false,
+    chartTimeframe: '1s'
   };
 
   const els = {
@@ -882,47 +897,6 @@ window.addEventListener('error', function(e){
       console.warn('Hoodlum: transactions indisponibles', err);
       return [];
     }
-  }
-
-  function tradesFeedHTML(trades, baseAddress){
-    if(!trades || trades.length === 0){
-      return '<div class="trades-feed"><div class="td-group-title">Activité récente</div><p class="swap-hint" style="margin:0;">Aucune transaction récente trouvée.</p></div>';
-    }
-    if(!state.seenTradeHashes) state.seenTradeHashes = new Set();
-    const isFirstPaint = state.seenTradeHashes.size === 0;
-    const rows = trades.map(function(t){
-      const a = t.attributes || {};
-      const isBuy = a.kind === 'buy';
-      const baseLower = (baseAddress || '').toLowerCase();
-      const tokenAmount = isBuy
-        ? ((a.to_token_address || '').toLowerCase() === baseLower ? a.to_token_amount : a.from_token_amount)
-        : ((a.from_token_address || '').toLowerCase() === baseLower ? a.from_token_amount : a.to_token_amount);
-      const amountNum = parseFloat(tokenAmount) || 0;
-      const amountFmt = amountNum >= 1e6 ? (amountNum / 1e6).toFixed(2) + 'M' : amountNum >= 1e3 ? (amountNum / 1e3).toFixed(1) + 'k' : amountNum.toFixed(2);
-      const vol = formatUSD(parseFloat(a.volume_in_usd) || 0);
-      const trader = a.tx_from_address ? (a.tx_from_address.slice(0, 4) + '…' + a.tx_from_address.slice(-4)) : '—';
-      const ts = a.block_timestamp ? formatAge(new Date(a.block_timestamp)) : '—';
-      const isNew = a.tx_hash && !isFirstPaint && !state.seenTradeHashes.has(a.tx_hash);
-      if(a.tx_hash) state.seenTradeHashes.add(a.tx_hash);
-      return (
-        '<div class="trade-row' + (isNew ? ' just-in' : '') + '">' +
-          '<span class="trade-kind ' + (isBuy ? 'pos' : 'neg') + '">' + (isBuy ? 'Achat' : 'Vente') + '</span>' +
-          '<span class="trade-vol">' + vol + '</span>' +
-          '<span class="trade-amount">' + amountFmt + '</span>' +
-          '<span class="trade-trader">' + escapeHTML(trader) + '</span>' +
-          '<span class="trade-time">' + ts + '</span>' +
-        '</div>'
-      );
-    }).join('');
-    return (
-      '<div class="trades-feed">' +
-        '<div class="td-group-title">Activité récente</div>' +
-        '<div class="trade-row trade-head">' +
-          '<span>Type</span><span>Volume</span><span>Montant</span><span>Trader</span><span>Il y a</span>' +
-        '</div>' +
-        rows +
-      '</div>'
-    );
   }
 
   async function fetchImagesFor(network, addresses){
@@ -1848,9 +1822,20 @@ window.addEventListener('error', function(e){
     return { precision: 10, minMove: 0.0000000001 };
   }
 
-  async function fetchOHLCV(network, poolAddress){
+  function bucketSecondsFor(tf){
+    return { '1s': 1, '1m': 60, '5m': 300, '15m': 900, '1h': 3600 }[tf] || 60;
+  }
+
+  async function fetchOHLCV(network, poolAddress, tf){
     try{
-      const url = GT_BASE + '/networks/' + network + '/pools/' + poolAddress + '/ohlcv/minute?aggregate=1&limit=200';
+      const map = {
+        '1m': { unit: 'minute', agg: 1 },
+        '5m': { unit: 'minute', agg: 5 },
+        '15m': { unit: 'minute', agg: 15 },
+        '1h': { unit: 'hour', agg: 1 }
+      };
+      const cfg = map[tf] || map['1m'];
+      const url = GT_BASE + '/networks/' + network + '/pools/' + poolAddress + '/ohlcv/' + cfg.unit + '?aggregate=' + cfg.agg + '&limit=200';
       const json = await fetchJSON(url);
       const list = (json.data && json.data.attributes && json.data.attributes.ohlcv_list) || [];
       return list.map(function(c){
@@ -1862,12 +1847,43 @@ window.addEventListener('error', function(e){
     }
   }
 
+  function priceFromTrade(a, baseAddress){
+    const baseLower = (baseAddress || '').toLowerCase();
+    if((a.to_token_address || '').toLowerCase() === baseLower) return parseFloat(a.price_to_in_usd);
+    if((a.from_token_address || '').toLowerCase() === baseLower) return parseFloat(a.price_from_in_usd);
+    return parseFloat(a.price_to_in_usd) || parseFloat(a.price_from_in_usd) || null;
+  }
+
+  function aggregateTradesToCandles(trades, baseAddress){
+    const sorted = (trades || []).slice().sort(function(a, b){
+      return new Date(a.attributes.block_timestamp) - new Date(b.attributes.block_timestamp);
+    });
+    const buckets = {};
+    const order = [];
+    sorted.forEach(function(t){
+      const a = t.attributes || {};
+      const price = priceFromTrade(a, baseAddress);
+      if(!price || !a.block_timestamp) return;
+      const ts = Math.floor(new Date(a.block_timestamp).getTime() / 1000);
+      if(!buckets[ts]){
+        buckets[ts] = { time: ts, open: price, high: price, low: price, close: price };
+        order.push(ts);
+      } else {
+        const b = buckets[ts];
+        b.high = Math.max(b.high, price);
+        b.low = Math.min(b.low, price);
+        b.close = price;
+      }
+    });
+    return order.map(function(ts){ return buckets[ts]; });
+  }
+
   function ensureChart(){
     if(state.lwChart) return state.lwChart;
     state.lwChart = LightweightCharts.createChart(els.chartCanvas, {
       layout: { background: { color: 'transparent' }, textColor: '#8B8B9E', fontFamily: 'IBM Plex Mono, monospace', fontSize: 11 },
       grid: { vertLines: { color: 'rgba(255,255,255,0.05)' }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
-      timeScale: { timeVisible: true, secondsVisible: false, borderColor: 'rgba(255,255,255,0.09)' },
+      timeScale: { timeVisible: true, secondsVisible: true, borderColor: 'rgba(255,255,255,0.09)' },
       rightPriceScale: { borderColor: 'rgba(255,255,255,0.09)' },
       autoSize: true
     });
@@ -1878,7 +1894,15 @@ window.addEventListener('error', function(e){
     return state.lwChart;
   }
 
-  async function loadChart(pool){
+  function seedFromPrice(pool){
+    const bucketSeconds = bucketSecondsFor(state.chartTimeframe);
+    const nowBucket = Math.floor(Date.now() / 1000 / bucketSeconds) * bucketSeconds;
+    const seed = { time: nowBucket, open: pool.priceUsd, high: pool.priceUsd, low: pool.priceUsd, close: pool.priceUsd };
+    state.lwSeries.setData([seed]);
+    state.currentCandles = [seed];
+  }
+
+  async function loadChart(pool, prefetchedTrades){
     ensureChart();
     els.chartLoading.classList.remove('hidden');
     els.chartLoading.textContent = 'Chargement du graphique…';
@@ -1888,18 +1912,24 @@ window.addEventListener('error', function(e){
     }, 8000);
     const fmt = priceFormatFor(pool.priceUsd);
     state.lwSeries.applyOptions({ priceFormat: { type: 'price', precision: fmt.precision, minMove: fmt.minMove } });
-    const candles = await fetchOHLCV(pool.network, pool.address);
+
+    let candles;
+    if(state.chartTimeframe === '1s'){
+      const trades = prefetchedTrades || await fetchTrades(pool.network, pool.address);
+      candles = aggregateTradesToCandles(trades, pool.baseAddress);
+    } else {
+      candles = await fetchOHLCV(pool.network, pool.address, state.chartTimeframe);
+    }
     clearTimeout(state._chartLoadTimeout);
     els.chartLoading.classList.add('hidden');
-    if(candles.length === 0){
+    if(!candles || candles.length === 0){
       if(pool.priceUsd){
-        const nowBucket = Math.floor(Date.now() / 1000 / 60) * 60;
-        const seed = { time: nowBucket, open: pool.priceUsd, high: pool.priceUsd, low: pool.priceUsd, close: pool.priceUsd };
-        state.lwSeries.setData([seed]);
-        state.currentCandles = [seed];
+        seedFromPrice(pool);
       } else {
         els.chartLoading.classList.remove('hidden');
-        els.chartLoading.textContent = 'Aucune donnée de prix disponible pour ce token pour le moment.';
+        els.chartLoading.textContent = state.chartTimeframe === '1s'
+          ? 'Pas encore de transaction récente pour construire un graphique seconde par seconde sur ce token.'
+          : 'Aucune donnée de prix disponible pour ce token pour le moment.';
         state.currentCandles = [];
       }
       return;
@@ -1911,7 +1941,7 @@ window.addEventListener('error', function(e){
 
   function updateLiveCandle(priceUsd){
     if(!state.lwSeries || !state.currentCandles || state.currentCandles.length === 0 || !priceUsd) return;
-    const bucketSeconds = 60;
+    const bucketSeconds = bucketSecondsFor(state.chartTimeframe);
     const nowBucket = Math.floor(Date.now() / 1000 / bucketSeconds) * bucketSeconds;
     const last = state.currentCandles[state.currentCandles.length - 1];
     if(nowBucket === last.time){
@@ -1926,6 +1956,77 @@ window.addEventListener('error', function(e){
     }
   }
 
+  function switchTimeframe(tf){
+    if(!state.currentModalPool || state.chartTimeframe === tf) return;
+    state.chartTimeframe = tf;
+    document.querySelectorAll('.tf-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.tf === tf); });
+    loadChart(state.currentModalPool);
+  }
+
+  function tradesFeedShellHTML(){
+    return (
+      '<div class="trades-feed">' +
+        '<div class="td-group-title">Activité récente</div>' +
+        '<div class="trade-row trade-head"><span>Type</span><span>Volume</span><span>Montant</span><span>Trader</span><span>Il y a</span></div>' +
+        '<div id="trades-body"><p class="swap-hint" id="trades-empty-msg">Chargement…</p></div>' +
+      '</div>'
+    );
+  }
+
+  function tradeRowHTML(t, baseAddress, isNew){
+    const a = t.attributes || {};
+    const isBuy = a.kind === 'buy';
+    const baseLower = (baseAddress || '').toLowerCase();
+    const tokenAmount = isBuy
+      ? ((a.to_token_address || '').toLowerCase() === baseLower ? a.to_token_amount : a.from_token_amount)
+      : ((a.from_token_address || '').toLowerCase() === baseLower ? a.from_token_amount : a.to_token_amount);
+    const amountNum = parseFloat(tokenAmount) || 0;
+    const amountFmt = amountNum >= 1e6 ? (amountNum / 1e6).toFixed(2) + 'M' : amountNum >= 1e3 ? (amountNum / 1e3).toFixed(1) + 'k' : amountNum.toFixed(2);
+    const vol = formatUSD(parseFloat(a.volume_in_usd) || 0);
+    const trader = a.tx_from_address ? (a.tx_from_address.slice(0, 4) + '…' + a.tx_from_address.slice(-4)) : '—';
+    const ts = a.block_timestamp ? formatAge(new Date(a.block_timestamp)) : '—';
+    return (
+      '<div class="trade-row' + (isNew ? ' just-in' : '') + '">' +
+        '<span class="trade-kind ' + (isBuy ? 'pos' : 'neg') + '">' + (isBuy ? 'Achat' : 'Vente') + '</span>' +
+        '<span class="trade-vol">' + vol + '</span>' +
+        '<span class="trade-amount">' + amountFmt + '</span>' +
+        '<span class="trade-trader">' + escapeHTML(trader) + '</span>' +
+        '<span class="trade-time">' + ts + '</span>' +
+      '</div>'
+    );
+  }
+
+  function appendTradeRows(trades, baseAddress){
+    const body = document.getElementById('trades-body');
+    if(!body) return;
+    if(!trades || trades.length === 0){
+      if(state.seenTradeHashes && state.seenTradeHashes.size > 0) return; // keep existing rows, just no new ones this round
+      body.innerHTML = '<p class="swap-hint">Aucune transaction récente trouvée.</p>';
+      return;
+    }
+    if(!state.seenTradeHashes) state.seenTradeHashes = new Set();
+    const isFirst = state.seenTradeHashes.size === 0;
+    const newOnes = trades.filter(function(t){
+      const h = t.attributes && t.attributes.tx_hash;
+      return h && !state.seenTradeHashes.has(h);
+    });
+    trades.forEach(function(t){
+      const h = t.attributes && t.attributes.tx_hash;
+      if(h) state.seenTradeHashes.add(h);
+    });
+    if(isFirst){
+      body.innerHTML = trades.map(function(t){ return tradeRowHTML(t, baseAddress, false); }).join('');
+      return;
+    }
+    if(newOnes.length === 0) return;
+    newOnes.slice().reverse().forEach(function(t){
+      body.insertAdjacentHTML('afterbegin', tradeRowHTML(t, baseAddress, true));
+    });
+    while(body.children.length > 15){
+      body.removeChild(body.lastElementChild);
+    }
+  }
+
   function openChartModal(pool, pairLabel){
     state.chartModalOpen = true;
     els.chartModalScroll.scrollTop = 0;
@@ -1934,33 +2035,57 @@ window.addEventListener('error', function(e){
     els.chartModalTitle.textContent = pairLabel;
     els.chartModalExternal.href = externalUrl;
     els.chartModal.classList.add('open');
-    loadChart(pool);
+    document.querySelectorAll('.tf-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.tf === state.chartTimeframe); });
+    document.getElementById('trades-feed-wrap').innerHTML = tradesFeedShellHTML();
+    state.seenTradeHashes = new Set();
+    if(state.chartTimeframe === '1s'){
+      fetchTrades(network, address).then(function(trades){
+        appendTradeRows(trades, pool.baseAddress);
+        loadChart(pool, trades);
+      });
+    } else {
+      loadChart(pool);
+      fetchTrades(network, address).then(function(trades){
+        appendTradeRows(trades, pool.baseAddress);
+      });
+    }
 
     renderPositionBadge(pool);
-    clearInterval(state._chartPositionInterval);
-    state._chartPositionInterval = setInterval(function(){
-      Promise.all([ fetchSinglePool(network, address), fetchTrades(network, address) ]).then(function(results){
-        const fresh = results[0];
-        const trades = results[1];
-        if(fresh){
-          state.currentModalPool = fresh;
-          renderPositionBadge(fresh);
-          updateLiveCandle(fresh.priceUsd);
-          const secKey = fresh.baseAddress ? network + ':' + fresh.baseAddress.toLowerCase() : '';
-          const freshSec = secKey ? state.securityCache[secKey] : null;
-          const wrap = document.getElementById('token-detail-wrap');
-          if(wrap) wrap.innerHTML = tokenDetailHTML(fresh, freshSec);
-        }
-        const feedWrap = document.getElementById('trades-feed-wrap');
-        if(feedWrap) feedWrap.innerHTML = tradesFeedHTML(trades, fresh ? fresh.baseAddress : null);
+    clearInterval(state._chartPriceInterval);
+    clearInterval(state._chartTradesInterval);
+
+    state._chartPriceInterval = setInterval(function(){
+      fetchSinglePool(network, address).then(function(fresh){
+        if(!fresh) return;
+        state.currentModalPool = fresh;
+        renderPositionBadge(fresh);
+        updateLiveCandle(fresh.priceUsd);
+        const secKey = fresh.baseAddress ? network + ':' + fresh.baseAddress.toLowerCase() : '';
+        const freshSec = secKey ? state.securityCache[secKey] : null;
+        const wrap = document.getElementById('token-detail-wrap');
+        if(wrap) wrap.innerHTML = tokenDetailHTML(fresh, freshSec);
       });
     }, 3000);
+
+    state._chartTradesInterval = setInterval(function(){
+      fetchTrades(network, address).then(function(trades){
+        appendTradeRows(trades, state.currentModalPool ? state.currentModalPool.baseAddress : pool.baseAddress);
+        if(state.chartTimeframe === '1s' && trades && trades.length > 0){
+          const rebuilt = aggregateTradesToCandles(trades, state.currentModalPool ? state.currentModalPool.baseAddress : pool.baseAddress);
+          if(rebuilt.length > 0){
+            state.lwSeries.setData(rebuilt);
+            state.currentCandles = rebuilt;
+          }
+        }
+      });
+    }, 6000);
   }
   function closeChartModal(){
     state.chartModalOpen = false;
     els.chartModal.classList.remove('open');
     clearTimeout(state._chartLoadTimeout);
-    clearInterval(state._chartPositionInterval);
+    clearInterval(state._chartPriceInterval);
+    clearInterval(state._chartTradesInterval);
     if(state.tab === 'watchlist') refreshWatchlist(true);
     else if(state.tab === 'paper') refreshPaper(true);
     else refresh(state.tab, true);
@@ -2015,13 +2140,14 @@ window.addEventListener('error', function(e){
       });
     }
     document.getElementById('token-detail-wrap').innerHTML = tokenDetailHTML(pool, sec);
-    fetchTrades(pool.network, pool.address).then(function(trades){
-      const feedWrap = document.getElementById('trades-feed-wrap');
-      if(feedWrap) feedWrap.innerHTML = tradesFeedHTML(trades, pool.baseAddress);
-    });
     openChartModal(pool, row.dataset.pair);
   });
   els.chartModalClose.addEventListener('click', closeChartModal);
+  document.getElementById('tf-row').addEventListener('click', function(e){
+    const btn = e.target.closest('.tf-btn');
+    if(!btn) return;
+    switchTimeframe(btn.dataset.tf);
+  });
   els.tokenDetailWrap.addEventListener('click', function(e){
     const copyBtn = e.target.closest('#td-copy-address');
     if(!copyBtn) return;
