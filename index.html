@@ -204,6 +204,10 @@
   .tag.sec-bad{ color:var(--red); border-color:rgba(251,113,133,0.5); background:rgba(251,113,133,0.08); }
 
   .empty{ padding:40px 18px; text-align:center; color:var(--text-muted); font-size:13.5px; line-height:1.5; }
+  .pager{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 2px 4px; }
+  .pager-btn{ flex:0 0 auto; padding:9px 14px; font-size:13px; }
+  .pager-btn:disabled{ opacity:0.35; }
+  .pager-num{ font-family:var(--mono); font-size:12px; color:var(--text-muted); }
   .skeleton{
     height:82px; border-radius:16px;
     background:linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 37%, var(--surface) 63%);
@@ -426,13 +430,19 @@
       <label>Âge max</label>
       <select id="f-age">
         <option value="" selected>Illimité</option>
-        <option value="5">5 min</option>
-        <option value="15">15 min</option>
-        <option value="60">1 h</option>
-        <option value="360">6 h</option>
-        <option value="1440">24 h</option>
+        <option value="1">&lt; 1 min</option>
+        <option value="5">&lt; 5 min</option>
+        <option value="10">&lt; 10 min</option>
+        <option value="15">&lt; 15 min</option>
+        <option value="30">&lt; 30 min</option>
+        <option value="60">&lt; 1 h</option>
+        <option value="180">&lt; 3 h</option>
+        <option value="360">&lt; 6 h</option>
+        <option value="720">&lt; 12 h</option>
+        <option value="1440">&lt; 24 h</option>
       </select>
     </div>
+
   </div>
 
   <div class="field">
@@ -609,6 +619,7 @@ window.addEventListener('error', function(e){
   const state = {
     network: 'robinhood',
     tab: 'trending',
+    page: { trending: 1, new: 1 },
     pools: { trending: null, new: null },
     rawCount: { trending: null, new: null },
     error: { trending: null, new: null },
@@ -789,7 +800,8 @@ window.addEventListener('error', function(e){
 
   async function fetchPools(tab){
     const endpoint = tab === 'trending' ? 'trending_pools' : 'new_pools';
-    const url = GT_BASE + '/networks/' + state.network + '/' + endpoint;
+    const page = state.page[tab] || 1;
+    const url = GT_BASE + '/networks/' + state.network + '/' + endpoint + '?page=' + page;
     const json = await fetchJSON(url);
     return (json.data || []).map(function(item){ return parsePool(item, state.network); });
   }
@@ -1046,6 +1058,7 @@ window.addEventListener('error', function(e){
     state.error = { trending: null, new: null };
     state.lastUpdated = { trending: null, new: null };
     state.seenIds = {};
+    state.page = { trending: 1, new: 1 };
     state.filters.platforms.clear();
     render();
     refresh(state.tab, false);
@@ -1197,6 +1210,17 @@ window.addEventListener('error', function(e){
           '</div>';
         }).join('') +
         '<div class="score-summary"><strong>' + known.length + '/5 critères connus</strong>, ' + positive + ' en zone favorable — ' + verdict + '. Indicatif seulement, pas un conseil d\'achat.</div>' +
+      '</div>'
+    );
+  }
+
+  function pagerHTML(tab){
+    const page = state.page[tab] || 1;
+    return (
+      '<div class="pager">' +
+        '<button class="btn ghost pager-btn" data-page-dir="-1"' + (page <= 1 ? ' disabled' : '') + '>← Précédent</button>' +
+        '<span class="pager-num">Page ' + page + '</span>' +
+        '<button class="btn ghost pager-btn" data-page-dir="1"' + (page >= 10 ? ' disabled' : '') + '>Suivant →</button>' +
       '</div>'
     );
   }
@@ -1393,14 +1417,14 @@ window.addEventListener('error', function(e){
 
     if(filtered.length === 0){
       if(pools.length === 0){
-        els.list.innerHTML = '<div class="empty">L\'API a renvoyé 0 paire pour ' + escapeHTML(NETWORKS[state.network].label) + ' sur cet onglet en ce moment. Pas un bug — soit c\'est calme, soit l\'indexation est encore partielle.</div>';
+        els.list.innerHTML = '<div class="empty">L\'API a renvoyé 0 paire pour ' + escapeHTML(NETWORKS[state.network].label) + ' sur cet onglet en ce moment. Pas un bug — soit c\'est calme, soit l\'indexation est encore partielle.</div>' + pagerHTML(tab);
       } else {
-        els.list.innerHTML = '<div class="empty">' + pools.length + ' paires reçues, mais aucune ne passe tes filtres actuels. Ouvre les filtres pour les assouplir.</div>';
+        els.list.innerHTML = '<div class="empty">' + pools.length + ' paires reçues, mais aucune ne passe tes filtres actuels. Ouvre les filtres pour les assouplir.</div>' + pagerHTML(tab);
       }
       return;
     }
 
-    els.list.innerHTML = filtered.map(function(p){ return rowHTML(p, !!p._isNew); }).join('');
+    els.list.innerHTML = filtered.map(function(p){ return rowHTML(p, !!p._isNew); }).join('') + pagerHTML(tab);
   }
 
   function renderWatchlist(){
@@ -1684,6 +1708,16 @@ window.addEventListener('error', function(e){
     clearInterval(state._chartPositionInterval);
   }
   els.list.addEventListener('click', function(e){
+    const pagerBtn = e.target.closest('.pager-btn');
+    if(pagerBtn){
+      if(pagerBtn.disabled) return;
+      const dir = parseInt(pagerBtn.dataset.pageDir, 10);
+      const tab = state.tab;
+      const next = (state.page[tab] || 1) + dir;
+      state.page[tab] = Math.max(1, Math.min(10, next));
+      refresh(tab, false);
+      return;
+    }
     const sellBtn = e.target.closest('[data-sell-id]');
     if(sellBtn){
       const price = sellBtn.dataset.sellPrice ? parseFloat(sellBtn.dataset.sellPrice) : null;
