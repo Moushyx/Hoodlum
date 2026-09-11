@@ -855,15 +855,22 @@ window.addEventListener('error', function(e){
     };
   }
 
+  function timeoutRace(promise, ms){
+    return Promise.race([
+      promise,
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout après ' + (ms / 1000) + 's')); }, ms); })
+    ]);
+  }
+
   async function fetchJSON(url){
     try{
-      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      const res = await timeoutRace(fetch(url, { headers: { 'Accept': 'application/json' } }), 6000);
       if(!res.ok) throw new Error('HTTP ' + res.status);
       return await res.json();
     }catch(directErr){
       try{
         const proxied = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-        const res2 = await fetch(proxied);
+        const res2 = await timeoutRace(fetch(proxied), 6000);
         if(!res2.ok) throw new Error('HTTP ' + res2.status + ' (proxy)');
         return await res2.json();
       }catch(proxyErr){
@@ -1914,6 +1921,7 @@ window.addEventListener('error', function(e){
     const seed = { time: nowBucket, open: pool.priceUsd, high: pool.priceUsd, low: pool.priceUsd, close: pool.priceUsd };
     state.lwSeries.setData([seed]);
     state.currentCandles = [seed];
+    applyReasonableView(1);
   }
 
   async function loadChart(pool, prefetchedTrades, silent){
@@ -1921,6 +1929,8 @@ window.addEventListener('error', function(e){
     if(!silent){
       els.chartLoading.classList.remove('hidden');
       els.chartLoading.textContent = 'Chargement du graphique…';
+      state.lwSeries.setData([]);
+      state.currentCandles = [];
     }
     clearTimeout(state._chartLoadTimeout);
     state._chartLoadTimeout = setTimeout(function(){
