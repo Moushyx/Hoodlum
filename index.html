@@ -607,7 +607,7 @@
     <div class="chart-modal-title" id="chart-modal-title">Graphique</div>
     <button class="icon-btn" id="chart-modal-close">✕</button>
   </div>
-  <div class="chart-modal-scroll">
+  <div class="chart-modal-scroll" id="chart-modal-scroll">
     <div class="score-panel" id="score-panel"></div>
     <div id="token-detail-wrap"></div>
     <div id="trades-feed-wrap"></div>
@@ -725,6 +725,7 @@ window.addEventListener('error', function(e){
     chartModal: document.getElementById('chart-modal'),
     chartModalTitle: document.getElementById('chart-modal-title'),
     chartCanvas: document.getElementById('chart-canvas'),
+    chartModalScroll: document.getElementById('chart-modal-scroll'),
     chartModalExternal: document.getElementById('chart-modal-external'),
     chartModalClose: document.getElementById('chart-modal-close'),
     chartLoading: document.getElementById('chart-loading'),
@@ -1889,12 +1890,20 @@ window.addEventListener('error', function(e){
     state.lwSeries.applyOptions({ priceFormat: { type: 'price', precision: fmt.precision, minMove: fmt.minMove } });
     const candles = await fetchOHLCV(pool.network, pool.address);
     clearTimeout(state._chartLoadTimeout);
+    els.chartLoading.classList.add('hidden');
     if(candles.length === 0){
-      els.chartLoading.textContent = 'Historique indisponible pour ce token (trop récent, ou données insuffisantes).';
-      state.currentCandles = [];
+      if(pool.priceUsd){
+        const nowBucket = Math.floor(Date.now() / 1000 / 60) * 60;
+        const seed = { time: nowBucket, open: pool.priceUsd, high: pool.priceUsd, low: pool.priceUsd, close: pool.priceUsd };
+        state.lwSeries.setData([seed]);
+        state.currentCandles = [seed];
+      } else {
+        els.chartLoading.classList.remove('hidden');
+        els.chartLoading.textContent = 'Aucune donnée de prix disponible pour ce token pour le moment.';
+        state.currentCandles = [];
+      }
       return;
     }
-    els.chartLoading.classList.add('hidden');
     state.lwSeries.setData(candles);
     state.currentCandles = candles;
     state.lwChart.timeScale().fitContent();
@@ -1919,6 +1928,7 @@ window.addEventListener('error', function(e){
 
   function openChartModal(pool, pairLabel){
     state.chartModalOpen = true;
+    els.chartModalScroll.scrollTop = 0;
     const network = pool.network, address = pool.address;
     const externalUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address;
     els.chartModalTitle.textContent = pairLabel;
