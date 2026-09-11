@@ -314,6 +314,30 @@
     font-size:14px; font-weight:700; padding:13px; border-radius:12px;
   }
   .paper-buy-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:12px 16px; background:var(--surface-solid); border-bottom:1px solid var(--border); }
+  .token-detail{ padding:14px 16px; background:var(--surface-solid); }
+  .token-detail-title{ font-weight:700; font-size:13.5px; margin-bottom:10px; }
+  .token-detail-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; }
+  .td-item{ display:flex; flex-direction:column; gap:2px; }
+  .td-label{ font-size:10.5px; color:var(--text-muted); }
+  .td-value{ font-family:var(--mono); font-weight:700; font-size:13px; }
+  .td-address{
+    display:block; width:100%; margin-top:12px; padding:10px; text-align:center;
+    background:var(--surface); border:1px solid var(--border); border-radius:10px;
+    color:var(--text-muted); font-family:var(--mono); font-size:11.5px; cursor:pointer;
+  }
+  .td-address.copied{ color:var(--green); border-color:rgba(52,211,153,0.5); }
+  .trades-feed{ margin-top:16px; padding-top:14px; border-top:1px solid var(--border); }
+  .trade-row{
+    display:grid; grid-template-columns:1.1fr 1fr 1fr 1.1fr 0.8fr;
+    gap:4px; align-items:center; padding:7px 0; font-size:11px;
+    border-bottom:1px solid rgba(255,255,255,0.05);
+  }
+  .trade-row.trade-head{ color:var(--text-muted); font-size:10px; text-transform:uppercase; letter-spacing:0.02em; border-bottom:1px solid var(--border); }
+  .trade-kind{ font-weight:700; font-family:var(--mono); }
+  .trade-kind.pos{ color:var(--green); }
+  .trade-kind.neg{ color:var(--red); }
+  .trade-vol, .trade-amount{ font-family:var(--mono); }
+  .trade-trader, .trade-time{ color:var(--text-muted); font-family:var(--mono); font-size:10.5px; }
   .position-badge{
     position:absolute; top:10px; left:10px; z-index:5;
     background:rgba(10,10,16,0.85); backdrop-filter:blur(6px);
@@ -576,6 +600,7 @@
     <div class="chart-loading" id="chart-loading">Chargement du graphique…</div>
     <div class="position-badge" id="position-badge" style="display:none;"></div>
     <iframe id="chart-modal-iframe" src="" title="Graphique du token" scrolling="no" sandbox="allow-scripts allow-same-origin allow-forms" allow="clipboard-write"></iframe>
+    <div id="token-detail-wrap"></div>
   </div>
   <div class="chart-modal-footer">
     <a id="chart-modal-external" href="#" target="_blank" rel="noopener">Acheter / vendre sur GeckoTerminal ↗</a>
@@ -686,6 +711,7 @@ window.addEventListener('error', function(e){
     aClose: document.getElementById('a-close'),
     aSave: document.getElementById('a-save'),
     paperBuyRow: document.getElementById('paper-buy-row'),
+    tokenDetailWrap: document.getElementById('token-detail-wrap'),
     paperSellSection: document.getElementById('paper-sell-section'),
     paperToast: document.getElementById('paper-toast')
   };
@@ -772,10 +798,14 @@ window.addEventListener('error', function(e){
       liquidity: parseFloat(a.reserve_in_usd) || 0,
       volume24h: parseFloat(vol.h24) || 0,
       fdv: a.fdv_usd ? parseFloat(a.fdv_usd) : null,
+      marketCap: a.market_cap_usd ? parseFloat(a.market_cap_usd) : null,
       change24h: parseFloat(pc.h24) || 0,
       change1h: parseFloat(pc.h1) || 0,
       change5m: parseFloat(pc.m5) || 0,
+      volume1h: parseFloat(vol.h1) || 0,
+      volume6h: parseFloat(vol.h6) || 0,
       txH1: tx.h1 || { buys: 0, sells: 0 },
+      txH24: tx.h24 || { buys: 0, sells: 0 },
       createdAt: a.pool_created_at ? new Date(a.pool_created_at) : null
     };
   }
@@ -811,6 +841,54 @@ window.addEventListener('error', function(e){
     const json = await fetchJSON(url);
     if(!json || !json.data) return null;
     return parsePool(json.data, network);
+  }
+
+  async function fetchTrades(network, poolAddress){
+    try{
+      const url = GT_BASE + '/networks/' + network + '/pools/' + poolAddress + '/trades';
+      const json = await fetchJSON(url);
+      return (json.data || []).slice(0, 12);
+    }catch(err){
+      console.warn('Hoodlum: transactions indisponibles', err);
+      return [];
+    }
+  }
+
+  function tradesFeedHTML(trades, baseAddress){
+    if(!trades || trades.length === 0){
+      return '<div class="trades-feed"><div class="token-detail-title">Activité récente</div><p class="swap-hint" style="margin:0;">Aucune transaction récente trouvée.</p></div>';
+    }
+    const rows = trades.map(function(t){
+      const a = t.attributes || {};
+      const isBuy = a.kind === 'buy';
+      const baseLower = (baseAddress || '').toLowerCase();
+      const tokenAmount = isBuy
+        ? ((a.to_token_address || '').toLowerCase() === baseLower ? a.to_token_amount : a.from_token_amount)
+        : ((a.from_token_address || '').toLowerCase() === baseLower ? a.from_token_amount : a.to_token_amount);
+      const amountNum = parseFloat(tokenAmount) || 0;
+      const amountFmt = amountNum >= 1e6 ? (amountNum / 1e6).toFixed(2) + 'M' : amountNum >= 1e3 ? (amountNum / 1e3).toFixed(1) + 'k' : amountNum.toFixed(2);
+      const vol = formatUSD(parseFloat(a.volume_in_usd) || 0);
+      const trader = a.tx_from_address ? (a.tx_from_address.slice(0, 4) + '…' + a.tx_from_address.slice(-4)) : '—';
+      const ts = a.block_timestamp ? formatAge(new Date(a.block_timestamp)) : '—';
+      return (
+        '<div class="trade-row">' +
+          '<span class="trade-kind ' + (isBuy ? 'pos' : 'neg') + '">' + (isBuy ? 'Achat' : 'Vente') + '</span>' +
+          '<span class="trade-vol">' + vol + '</span>' +
+          '<span class="trade-amount">' + amountFmt + '</span>' +
+          '<span class="trade-trader">' + escapeHTML(trader) + '</span>' +
+          '<span class="trade-time">' + ts + '</span>' +
+        '</div>'
+      );
+    }).join('');
+    return (
+      '<div class="trades-feed">' +
+        '<div class="token-detail-title">Activité récente</div>' +
+        '<div class="trade-row trade-head">' +
+          '<span>Type</span><span>Volume</span><span>Montant</span><span>Trader</span><span>Il y a</span>' +
+        '</div>' +
+        rows +
+      '</div>'
+    );
   }
 
   async function fetchImagesFor(network, addresses){
@@ -863,7 +941,9 @@ window.addEventListener('error', function(e){
           mintable: flag(sec.is_mintable) || flag(sec.mintable),
           blacklist: flag(sec.is_blacklisted) || flag(sec.transfer_pausable),
           lpLockedPct: lpLockedPct,
-          holderCount: sec.holder_count != null ? parseInt(sec.holder_count, 10) : null
+          holderCount: sec.holder_count != null ? parseInt(sec.holder_count, 10) : null,
+          buyTax: sec.buy_tax != null ? Math.round(parseFloat(sec.buy_tax) * 100) : null,
+          sellTax: sec.sell_tax != null ? Math.round(parseFloat(sec.sell_tax) * 100) : null
         };
       });
     }catch(err){
@@ -1210,6 +1290,38 @@ window.addEventListener('error', function(e){
           '</div>';
         }).join('') +
         '<div class="score-summary"><strong>' + known.length + '/5 critères connus</strong>, ' + positive + ' en zone favorable — ' + verdict + '. Indicatif seulement, pas un conseil d\'achat.</div>' +
+      '</div>'
+    );
+  }
+
+  function tokenDetailHTML(pool, sec){
+    const bpH1 = pool.txH1 || { buys: 0, sells: 0 };
+    const bpH24 = pool.txH24 || { buys: 0, sells: 0 };
+    const shortAddr = pool.address ? (pool.address.slice(0, 6) + '…' + pool.address.slice(-4)) : '—';
+    const items = [
+      { label: 'Prix', value: '$' + formatPrice(pool.priceUsd) },
+      { label: 'Liquidité', value: formatUSD(pool.liquidity) },
+      { label: 'Volume 1h', value: formatUSD(pool.volume1h) },
+      { label: 'Volume 24h', value: formatUSD(pool.volume24h) },
+      { label: 'FDV', value: pool.fdv !== null ? formatUSD(pool.fdv) : 'Inconnu' },
+      { label: 'Market cap', value: pool.marketCap !== null ? formatUSD(pool.marketCap) : 'Non vérifié' },
+      { label: 'Âge de la paire', value: formatAge(pool.createdAt) },
+      { label: 'Plateforme', value: formatPlatform(pool.dexId) },
+      { label: 'Taxe achat', value: (sec && sec.buyTax !== null) ? sec.buyTax + '%' : 'Inconnue' },
+      { label: 'Taxe vente', value: (sec && sec.sellTax !== null) ? sec.sellTax + '%' : 'Inconnue' },
+      { label: 'Achats/Ventes (1h)', value: (bpH1.buys || 0) + ' / ' + (bpH1.sells || 0) },
+      { label: 'Achats/Ventes (24h)', value: (bpH24.buys || 0) + ' / ' + (bpH24.sells || 0) }
+    ];
+    return (
+      '<div class="token-detail">' +
+        '<div class="token-detail-title">Détails de la paire</div>' +
+        '<div class="token-detail-grid">' +
+          items.map(function(it){
+            return '<div class="td-item"><span class="td-label">' + escapeHTML(it.label) + '</span><span class="td-value">' + escapeHTML(String(it.value)) + '</span></div>';
+          }).join('') +
+        '</div>' +
+        '<button class="td-address" id="td-copy-address" data-address="' + escapeHTML(pool.address) + '">Contrat : ' + escapeHTML(shortAddr) + ' · toucher pour copier</button>' +
+        '<div id="trades-feed-wrap"></div>' +
       '</div>'
     );
   }
@@ -1697,7 +1809,17 @@ window.addEventListener('error', function(e){
     clearInterval(state._chartPositionInterval);
     state._chartPositionInterval = setInterval(function(){
       fetchSinglePool(network, address).then(function(fresh){
-        if(fresh) renderPositionBadge(fresh);
+        if(fresh){
+          renderPositionBadge(fresh);
+          const secKey = fresh.baseAddress ? network + ':' + fresh.baseAddress.toLowerCase() : '';
+          const freshSec = secKey ? state.securityCache[secKey] : null;
+          const wrap = document.getElementById('token-detail-wrap');
+          if(wrap) wrap.innerHTML = tokenDetailHTML(fresh, freshSec);
+          fetchTrades(network, address).then(function(trades){
+            const feedWrap = document.getElementById('trades-feed-wrap');
+            if(feedWrap) feedWrap.innerHTML = tradesFeedHTML(trades, fresh.baseAddress);
+          });
+        }
       });
     }, 10000);
   }
@@ -1756,9 +1878,32 @@ window.addEventListener('error', function(e){
         toggleBtn.textContent = isOpen ? 'Masquer le détail ▲' : 'Voir le détail ▾';
       });
     }
+    document.getElementById('token-detail-wrap').innerHTML = tokenDetailHTML(pool, sec);
+    fetchTrades(pool.network, pool.address).then(function(trades){
+      const feedWrap = document.getElementById('trades-feed-wrap');
+      if(feedWrap) feedWrap.innerHTML = tradesFeedHTML(trades, pool.baseAddress);
+    });
     openChartModal(pool, row.dataset.pair);
   });
   els.chartModalClose.addEventListener('click', closeChartModal);
+  els.tokenDetailWrap.addEventListener('click', function(e){
+    const copyBtn = e.target.closest('#td-copy-address');
+    if(!copyBtn) return;
+    const addr = copyBtn.dataset.address;
+    const done = function(){
+      copyBtn.classList.add('copied');
+      copyBtn.textContent = '✓ Adresse copiée';
+      setTimeout(function(){
+        copyBtn.classList.remove('copied');
+        copyBtn.textContent = 'Contrat : ' + addr.slice(0, 6) + '…' + addr.slice(-4) + ' · toucher pour copier';
+      }, 1800);
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(addr).then(done).catch(function(){ showToast('Copie impossible'); });
+    } else {
+      showToast('Copie non supportée par ce navigateur');
+    }
+  });
   els.paperBuyRow.addEventListener('click', function(e){
     const btn = e.target.closest('.paper-buy-btn');
     if(!btn || !state.currentModalPool) return;
