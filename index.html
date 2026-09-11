@@ -269,7 +269,7 @@
   .chart-modal-title{ font-weight:700; font-size:15px; }
   .chart-modal-scroll{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; display:flex; flex-direction:column; }
   .chart-modal-body{ flex:0 0 auto; background:#0A0A10; position:relative; }
-  .chart-modal-body iframe{ width:100%; flex:0 0 auto; height:min(62vh, 480px); min-height:340px; border:0; }
+  #chart-canvas{ width:100%; height:min(62vh, 480px); min-height:340px; }
   .chart-loading{
     position:absolute; top:0; left:0; right:0; height:min(62vh, 480px); min-height:340px;
     display:flex; align-items:center; justify-content:center;
@@ -357,6 +357,11 @@
   .trade-kind.neg{ color:var(--red); }
   .trade-vol, .trade-amount{ font-family:var(--mono); }
   .trade-trader, .trade-time{ color:var(--text-muted); font-family:var(--mono); font-size:10.5px; }
+  @keyframes tradeFlash{
+    0%{ background:rgba(34,211,238,0.22); }
+    100%{ background:transparent; }
+  }
+  .trade-row.just-in{ animation:tradeFlash 1.8s ease-out; border-radius:6px; }
   .position-badge{
     position:absolute; top:10px; left:10px; z-index:5;
     background:rgba(10,10,16,0.85); backdrop-filter:blur(6px);
@@ -382,6 +387,7 @@
   }
   .paper-toast.show{ opacity:1; }
 </style>
+<script src="https://unpkg.com/lightweight-charts@5.1.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
 <div class="app">
@@ -621,7 +627,7 @@
     <div class="chart-modal-body">
       <div class="chart-loading" id="chart-loading">Chargement du graphique…</div>
       <div class="position-badge" id="position-badge" style="display:none;"></div>
-      <iframe id="chart-modal-iframe" src="" title="Graphique du token" scrolling="no" sandbox="allow-scripts allow-same-origin allow-forms" allow="clipboard-write"></iframe>
+      <div id="chart-canvas"></div>
     </div>
   </div>
   <div class="chart-modal-footer">
@@ -686,7 +692,8 @@ window.addEventListener('error', function(e){
     notifiedIds: new Set(),
     paper: loadJSON('hoodlum_paper', { cash: 1000, positions: [], realizedPnl: 0, history: [] }),
     paperLoading: false,
-    currentModalPool: null
+    currentModalPool: null,
+    chartModalOpen: false
   };
 
   const els = {
@@ -717,7 +724,7 @@ window.addEventListener('error', function(e){
     fApply: document.getElementById('f-apply'),
     chartModal: document.getElementById('chart-modal'),
     chartModalTitle: document.getElementById('chart-modal-title'),
-    chartModalIframe: document.getElementById('chart-modal-iframe'),
+    chartCanvas: document.getElementById('chart-canvas'),
     chartModalExternal: document.getElementById('chart-modal-external'),
     chartModalClose: document.getElementById('chart-modal-close'),
     chartLoading: document.getElementById('chart-loading'),
@@ -880,6 +887,8 @@ window.addEventListener('error', function(e){
     if(!trades || trades.length === 0){
       return '<div class="trades-feed"><div class="td-group-title">Activité récente</div><p class="swap-hint" style="margin:0;">Aucune transaction récente trouvée.</p></div>';
     }
+    if(!state.seenTradeHashes) state.seenTradeHashes = new Set();
+    const isFirstPaint = state.seenTradeHashes.size === 0;
     const rows = trades.map(function(t){
       const a = t.attributes || {};
       const isBuy = a.kind === 'buy';
@@ -892,8 +901,10 @@ window.addEventListener('error', function(e){
       const vol = formatUSD(parseFloat(a.volume_in_usd) || 0);
       const trader = a.tx_from_address ? (a.tx_from_address.slice(0, 4) + '…' + a.tx_from_address.slice(-4)) : '—';
       const ts = a.block_timestamp ? formatAge(new Date(a.block_timestamp)) : '—';
+      const isNew = a.tx_hash && !isFirstPaint && !state.seenTradeHashes.has(a.tx_hash);
+      if(a.tx_hash) state.seenTradeHashes.add(a.tx_hash);
       return (
-        '<div class="trade-row">' +
+        '<div class="trade-row' + (isNew ? ' just-in' : '') + '">' +
           '<span class="trade-kind ' + (isBuy ? 'pos' : 'neg') + '">' + (isBuy ? 'Achat' : 'Vente') + '</span>' +
           '<span class="trade-vol">' + vol + '</span>' +
           '<span class="trade-amount">' + amountFmt + '</span>' +
@@ -1828,47 +1839,121 @@ window.addEventListener('error', function(e){
     badge.style.display = 'none';
   }
 
-  function openChartModal(pool, pairLabel){
-    const network = pool.network, address = pool.address;
-    const chartUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address +
-      '?embed=1&info=0&swaps=0&light_chart=0&chart_type=price&resolution=1m&bg_color=0A0A10';
-    const externalUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address;
-    els.chartModalTitle.textContent = pairLabel;
+  function priceFormatFor(price){
+    if(!price || price === 0) return { precision: 2, minMove: 0.01 };
+    if(price >= 1) return { precision: 4, minMove: 0.0001 };
+    if(price >= 0.01) return { precision: 6, minMove: 0.000001 };
+    if(price >= 0.0001) return { precision: 8, minMove: 0.00000001 };
+    return { precision: 10, minMove: 0.0000000001 };
+  }
+
+  async function fetchOHLCV(network, poolAddress){
+    try{
+      const url = GT_BASE + '/networks/' + network + '/pools/' + poolAddress + '/ohlcv/minute?aggregate=1&limit=200';
+      const json = await fetchJSON(url);
+      const list = (json.data && json.data.attributes && json.data.attributes.ohlcv_list) || [];
+      return list.map(function(c){
+        return { time: c[0], open: c[1], high: c[2], low: c[3], close: c[4] };
+      }).sort(function(a, b){ return a.time - b.time; });
+    }catch(err){
+      console.warn('Hoodlum: OHLCV indisponible', err);
+      return [];
+    }
+  }
+
+  function ensureChart(){
+    if(state.lwChart) return state.lwChart;
+    state.lwChart = LightweightCharts.createChart(els.chartCanvas, {
+      layout: { background: { color: 'transparent' }, textColor: '#8B8B9E', fontFamily: 'IBM Plex Mono, monospace', fontSize: 11 },
+      grid: { vertLines: { color: 'rgba(255,255,255,0.05)' }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
+      timeScale: { timeVisible: true, secondsVisible: false, borderColor: 'rgba(255,255,255,0.09)' },
+      rightPriceScale: { borderColor: 'rgba(255,255,255,0.09)' },
+      autoSize: true
+    });
+    state.lwSeries = state.lwChart.addSeries(LightweightCharts.CandlestickSeries, {
+      upColor: '#34D399', downColor: '#FB7185', borderVisible: false,
+      wickUpColor: '#34D399', wickDownColor: '#FB7185'
+    });
+    return state.lwChart;
+  }
+
+  async function loadChart(pool){
+    ensureChart();
     els.chartLoading.classList.remove('hidden');
     els.chartLoading.textContent = 'Chargement du graphique…';
-    els.chartModalIframe.onload = function(){ els.chartLoading.classList.add('hidden'); clearTimeout(state._chartLoadTimeout); };
-    els.chartModalIframe.src = chartUrl;
-    els.chartModalExternal.href = externalUrl;
-    els.chartModal.classList.add('open');
     clearTimeout(state._chartLoadTimeout);
     state._chartLoadTimeout = setTimeout(function(){
       els.chartLoading.textContent = 'Le graphique met du temps à répondre — vérifie ta connexion, ou touche "Acheter / vendre sur GeckoTerminal" en bas pour voir la paire directement.';
     }, 8000);
+    const fmt = priceFormatFor(pool.priceUsd);
+    state.lwSeries.applyOptions({ priceFormat: { type: 'price', precision: fmt.precision, minMove: fmt.minMove } });
+    const candles = await fetchOHLCV(pool.network, pool.address);
+    clearTimeout(state._chartLoadTimeout);
+    if(candles.length === 0){
+      els.chartLoading.textContent = 'Historique indisponible pour ce token (trop récent, ou données insuffisantes).';
+      state.currentCandles = [];
+      return;
+    }
+    els.chartLoading.classList.add('hidden');
+    state.lwSeries.setData(candles);
+    state.currentCandles = candles;
+    state.lwChart.timeScale().fitContent();
+  }
+
+  function updateLiveCandle(priceUsd){
+    if(!state.lwSeries || !state.currentCandles || state.currentCandles.length === 0 || !priceUsd) return;
+    const bucketSeconds = 60;
+    const nowBucket = Math.floor(Date.now() / 1000 / bucketSeconds) * bucketSeconds;
+    const last = state.currentCandles[state.currentCandles.length - 1];
+    if(nowBucket === last.time){
+      last.high = Math.max(last.high, priceUsd);
+      last.low = Math.min(last.low, priceUsd);
+      last.close = priceUsd;
+      state.lwSeries.update(last);
+    } else if(nowBucket > last.time){
+      const newCandle = { time: nowBucket, open: last.close, high: priceUsd, low: priceUsd, close: priceUsd };
+      state.currentCandles.push(newCandle);
+      state.lwSeries.update(newCandle);
+    }
+  }
+
+  function openChartModal(pool, pairLabel){
+    state.chartModalOpen = true;
+    const network = pool.network, address = pool.address;
+    const externalUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address;
+    els.chartModalTitle.textContent = pairLabel;
+    els.chartModalExternal.href = externalUrl;
+    els.chartModal.classList.add('open');
+    loadChart(pool);
 
     renderPositionBadge(pool);
     clearInterval(state._chartPositionInterval);
     state._chartPositionInterval = setInterval(function(){
-      fetchSinglePool(network, address).then(function(fresh){
+      Promise.all([ fetchSinglePool(network, address), fetchTrades(network, address) ]).then(function(results){
+        const fresh = results[0];
+        const trades = results[1];
         if(fresh){
           state.currentModalPool = fresh;
           renderPositionBadge(fresh);
+          updateLiveCandle(fresh.priceUsd);
           const secKey = fresh.baseAddress ? network + ':' + fresh.baseAddress.toLowerCase() : '';
           const freshSec = secKey ? state.securityCache[secKey] : null;
           const wrap = document.getElementById('token-detail-wrap');
           if(wrap) wrap.innerHTML = tokenDetailHTML(fresh, freshSec);
-          fetchTrades(network, address).then(function(trades){
-            const feedWrap = document.getElementById('trades-feed-wrap');
-            if(feedWrap) feedWrap.innerHTML = tradesFeedHTML(trades, fresh.baseAddress);
-          });
         }
+        const feedWrap = document.getElementById('trades-feed-wrap');
+        if(feedWrap) feedWrap.innerHTML = tradesFeedHTML(trades, fresh ? fresh.baseAddress : null);
       });
-    }, 6000);
+    }, 3000);
   }
   function closeChartModal(){
+    state.chartModalOpen = false;
     els.chartModal.classList.remove('open');
-    els.chartModalIframe.src = ''; // stop loading/refreshing in the background
     clearTimeout(state._chartLoadTimeout);
     clearInterval(state._chartPositionInterval);
+    if(state.tab === 'watchlist') refreshWatchlist(true);
+    else if(state.tab === 'paper') refreshPaper(true);
+    else refresh(state.tab, true);
   }
   els.list.addEventListener('click', function(e){
     const pagerBtn = e.target.closest('.pager-btn');
@@ -1962,7 +2047,7 @@ window.addEventListener('error', function(e){
   });
 
   setInterval(function(){
-    if(document.visibilityState === 'visible'){
+    if(document.visibilityState === 'visible' && !state.chartModalOpen){
       if(state.tab === 'watchlist') refreshWatchlist(true);
       else if(state.tab === 'paper') refreshPaper(true);
       else refresh(state.tab, true);
