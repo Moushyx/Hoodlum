@@ -269,7 +269,7 @@
   .chart-modal-title{ font-weight:700; font-size:15px; }
   .chart-modal-scroll{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; display:flex; flex-direction:column; }
   .chart-modal-body{ flex:0 0 auto; background:#0A0A10; position:relative; }
-  #chart-canvas{ width:100%; height:min(62vh, 480px); min-height:340px; }
+  .chart-modal-body iframe{ width:100%; height:min(62vh, 480px); min-height:340px; border:0; }
   .chart-loading{
     position:absolute; top:0; left:0; right:0; height:min(62vh, 480px); min-height:340px;
     display:flex; align-items:center; justify-content:center;
@@ -401,7 +401,6 @@
   }
   .paper-toast.show{ opacity:1; }
 </style>
-<script src="https://unpkg.com/lightweight-charts@5.1.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
 <div class="app">
@@ -648,7 +647,7 @@
     <div class="chart-modal-body">
       <div class="chart-loading" id="chart-loading">Chargement du graphique…</div>
       <div class="position-badge" id="position-badge" style="display:none;"></div>
-      <div id="chart-canvas"></div>
+      <iframe id="chart-modal-iframe" src="" title="Graphique du token" scrolling="no" sandbox="allow-scripts allow-same-origin allow-forms" allow="clipboard-write"></iframe>
     </div>
   </div>
   <div class="chart-modal-footer">
@@ -746,7 +745,7 @@ window.addEventListener('error', function(e){
     fApply: document.getElementById('f-apply'),
     chartModal: document.getElementById('chart-modal'),
     chartModalTitle: document.getElementById('chart-modal-title'),
-    chartCanvas: document.getElementById('chart-canvas'),
+    chartModalIframe: document.getElementById('chart-modal-iframe'),
     chartModalScroll: document.getElementById('chart-modal-scroll'),
     chartModalExternal: document.getElementById('chart-modal-external'),
     chartModalClose: document.getElementById('chart-modal-close'),
@@ -1843,175 +1842,28 @@ window.addEventListener('error', function(e){
     badge.style.display = 'none';
   }
 
-  function priceFormatFor(price){
-    if(!price || price === 0) return { precision: 2, minMove: 0.01 };
-    if(price >= 1) return { precision: 4, minMove: 0.0001 };
-    if(price >= 0.01) return { precision: 6, minMove: 0.000001 };
-    if(price >= 0.0001) return { precision: 8, minMove: 0.00000001 };
-    return { precision: 10, minMove: 0.0000000001 };
+  function resolutionFor(tf){
+    return { '1s': '1s', '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1h' }[tf] || '1m';
   }
 
-  function bucketSecondsFor(tf){
-    return { '1s': 1, '1m': 60, '5m': 300, '15m': 900, '1h': 3600 }[tf] || 60;
-  }
-
-  async function fetchOHLCV(network, poolAddress, tf){
-    try{
-      const map = {
-        '1m': { unit: 'minute', agg: 1 },
-        '5m': { unit: 'minute', agg: 5 },
-        '15m': { unit: 'minute', agg: 15 },
-        '1h': { unit: 'hour', agg: 1 }
-      };
-      const cfg = map[tf] || map['1m'];
-      const url = GT_BASE + '/networks/' + network + '/pools/' + poolAddress + '/ohlcv/' + cfg.unit + '?aggregate=' + cfg.agg + '&limit=200';
-      const json = await fetchJSON(url);
-      const list = (json.data && json.data.attributes && json.data.attributes.ohlcv_list) || [];
-      return list.map(function(c){
-        return { time: c[0], value: c[4] };
-      }).sort(function(a, b){ return a.time - b.time; });
-    }catch(err){
-      console.warn('Hoodlum: OHLCV indisponible', err);
-      return [];
-    }
-  }
-
-  function priceFromTrade(a, baseAddress){
-    const baseLower = (baseAddress || '').toLowerCase();
-    if((a.to_token_address || '').toLowerCase() === baseLower) return parseFloat(a.price_to_in_usd);
-    if((a.from_token_address || '').toLowerCase() === baseLower) return parseFloat(a.price_from_in_usd);
-    return parseFloat(a.price_to_in_usd) || parseFloat(a.price_from_in_usd) || null;
-  }
-
-  function aggregateTradesToCandles(trades, baseAddress){
-    const sorted = (trades || []).slice().sort(function(a, b){
-      return new Date(a.attributes.block_timestamp) - new Date(b.attributes.block_timestamp);
-    });
-    const buckets = {};
-    const order = [];
-    sorted.forEach(function(t){
-      const a = t.attributes || {};
-      const price = priceFromTrade(a, baseAddress);
-      if(!price || !a.block_timestamp) return;
-      const ts = Math.floor(new Date(a.block_timestamp).getTime() / 1000);
-      if(!buckets[ts]) order.push(ts);
-      buckets[ts] = { time: ts, value: price };
-    });
-    return order.map(function(ts){ return buckets[ts]; });
-  }
-
-  function ensureChart(){
-    if(state.lwChart) return state.lwChart;
-    state.lwChart = LightweightCharts.createChart(els.chartCanvas, {
-      layout: { background: { color: 'transparent' }, textColor: '#8B8B9E', fontFamily: 'IBM Plex Mono, monospace', fontSize: 11 },
-      grid: { vertLines: { color: 'rgba(255,255,255,0.05)' }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
-      timeScale: { timeVisible: true, secondsVisible: true, borderColor: 'rgba(255,255,255,0.09)' },
-      rightPriceScale: { borderColor: 'rgba(255,255,255,0.09)' },
-      autoSize: true
-    });
-    state.lwSeries = state.lwChart.addSeries(LightweightCharts.AreaSeries, {
-      lineColor: '#A855F7', lineWidth: 2,
-      topColor: 'rgba(168,85,247,0.32)', bottomColor: 'rgba(34,211,238,0.02)',
-      priceLineColor: '#22D3EE'
-    });
-    return state.lwChart;
-  }
-
-  function applyReasonableView(candleCount){
-    if(!state.lwChart || candleCount === 0) return;
-    const desiredVisibleBars = 30;
-    const lastIndex = candleCount - 1;
-    try{
-      state.lwChart.timeScale().setVisibleLogicalRange({
-        from: lastIndex - desiredVisibleBars + 1,
-        to: lastIndex + 2
-      });
-    }catch(err){
-      console.warn('Hoodlum: ajustement du zoom impossible', err);
-    }
-  }
-
-  function seedFromPrice(pool){
-    const bucketSeconds = bucketSecondsFor(state.chartTimeframe);
-    const nowBucket = Math.floor(Date.now() / 1000 / bucketSeconds) * bucketSeconds;
-    const seed = { time: nowBucket, value: pool.priceUsd };
-    state.lwSeries.setData([seed]);
-    state.currentCandles = [seed];
-    applyReasonableView(1);
-  }
-
-  async function loadChart(pool, prefetchedTrades, silent){
-    ensureChart();
-    if(!silent){
-      els.chartLoading.classList.remove('hidden');
-      els.chartLoading.textContent = 'Chargement du graphique…';
-      state.lwSeries.setData([]);
-      state.currentCandles = [];
-    }
+  function loadChart(pool){
+    const chartUrl = 'https://www.geckoterminal.com/' + pool.network + '/pools/' + pool.address +
+      '?embed=1&info=0&swaps=0&light_chart=0&chart_type=price&resolution=' + resolutionFor(state.chartTimeframe) + '&bg_color=0A0A10';
+    els.chartLoading.classList.remove('hidden');
+    els.chartLoading.textContent = 'Chargement du graphique…';
+    els.chartModalIframe.onload = function(){ els.chartLoading.classList.add('hidden'); clearTimeout(state._chartLoadTimeout); };
+    els.chartModalIframe.src = chartUrl;
     clearTimeout(state._chartLoadTimeout);
     state._chartLoadTimeout = setTimeout(function(){
-      if(!silent) els.chartLoading.textContent = 'Le graphique met du temps à répondre — vérifie ta connexion, ou touche "Acheter / vendre sur GeckoTerminal" en bas pour voir la paire directement.';
+      els.chartLoading.textContent = 'Le graphique met du temps à répondre — vérifie ta connexion, ou touche "Acheter / vendre sur GeckoTerminal" en bas pour voir la paire directement.';
     }, 8000);
-    const fmt = priceFormatFor(pool.priceUsd);
-    state.lwSeries.applyOptions({ priceFormat: { type: 'price', precision: fmt.precision, minMove: fmt.minMove } });
-
-    let candles;
-    if(state.chartTimeframe === '1s'){
-      const trades = prefetchedTrades || await fetchTrades(pool.network, pool.address);
-      candles = aggregateTradesToCandles(trades, pool.baseAddress);
-    } else {
-      candles = await fetchOHLCV(pool.network, pool.address, state.chartTimeframe);
-    }
-    clearTimeout(state._chartLoadTimeout);
-    els.chartLoading.classList.add('hidden');
-    if(!candles || candles.length === 0){
-      if(silent) return; // keep whatever cached/seeded view is already showing
-      if(pool.priceUsd){
-        seedFromPrice(pool);
-      } else {
-        els.chartLoading.classList.remove('hidden');
-        els.chartLoading.textContent = state.chartTimeframe === '1s'
-          ? 'Pas encore de transaction récente pour construire un graphique seconde par seconde sur ce token.'
-          : 'Aucune donnée de prix disponible pour ce token pour le moment.';
-        state.currentCandles = [];
-      }
-      return;
-    }
-    state.lwSeries.setData(candles);
-    state.currentCandles = candles;
-    if(!state.candleCache) state.candleCache = {};
-    state.candleCache[state.chartTimeframe] = candles;
-    applyReasonableView(candles.length);
-  }
-
-  function updateLiveCandle(priceUsd){
-    if(!state.lwSeries || !state.currentCandles || state.currentCandles.length === 0 || !priceUsd) return;
-    const bucketSeconds = bucketSecondsFor(state.chartTimeframe);
-    const nowBucket = Math.floor(Date.now() / 1000 / bucketSeconds) * bucketSeconds;
-    const last = state.currentCandles[state.currentCandles.length - 1];
-    if(nowBucket === last.time){
-      last.value = priceUsd;
-      state.lwSeries.update(last);
-    } else if(nowBucket > last.time){
-      const newPoint = { time: nowBucket, value: priceUsd };
-      state.currentCandles.push(newPoint);
-      state.lwSeries.update(newPoint);
-    }
   }
 
   function switchTimeframe(tf){
     if(!state.currentModalPool || state.chartTimeframe === tf) return;
     state.chartTimeframe = tf;
     document.querySelectorAll('.tf-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.tf === tf); });
-    if(state.candleCache && state.candleCache[tf] && state.candleCache[tf].length > 0){
-      const cached = state.candleCache[tf];
-      state.lwSeries.setData(cached);
-      state.currentCandles = cached;
-      applyReasonableView(cached.length);
-      loadChart(state.currentModalPool, null, true); // refresh quietly, no spinner
-    } else {
-      loadChart(state.currentModalPool);
-    }
+    loadChart(state.currentModalPool);
   }
 
   function tradesFeedShellHTML(){
@@ -2080,7 +1932,6 @@ window.addEventListener('error', function(e){
 
   function openChartModal(pool, pairLabel){
     state.chartModalOpen = true;
-    state.candleCache = {};
     els.chartModalScroll.scrollTop = 0;
     const network = pool.network, address = pool.address;
     const externalUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address;
@@ -2088,19 +1939,13 @@ window.addEventListener('error', function(e){
     els.chartModalExternal.href = externalUrl;
     els.chartModal.classList.add('open');
     document.querySelectorAll('.tf-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.tf === state.chartTimeframe); });
+    loadChart(pool);
+
     document.getElementById('trades-feed-wrap').innerHTML = tradesFeedShellHTML();
     state.seenTradeHashes = new Set();
-    if(state.chartTimeframe === '1s'){
-      fetchTrades(network, address).then(function(trades){
-        appendTradeRows(trades, pool.baseAddress);
-        loadChart(pool, trades);
-      });
-    } else {
-      loadChart(pool);
-      fetchTrades(network, address).then(function(trades){
-        appendTradeRows(trades, pool.baseAddress);
-      });
-    }
+    fetchTrades(network, address).then(function(trades){
+      appendTradeRows(trades, pool.baseAddress);
+    });
 
     renderPositionBadge(pool);
     clearInterval(state._chartPriceInterval);
@@ -2111,7 +1956,6 @@ window.addEventListener('error', function(e){
         if(!fresh) return;
         state.currentModalPool = fresh;
         renderPositionBadge(fresh);
-        updateLiveCandle(fresh.priceUsd);
         const secKey = fresh.baseAddress ? network + ':' + fresh.baseAddress.toLowerCase() : '';
         const freshSec = secKey ? state.securityCache[secKey] : null;
         const wrap = document.getElementById('token-detail-wrap');
@@ -2122,19 +1966,13 @@ window.addEventListener('error', function(e){
     state._chartTradesInterval = setInterval(function(){
       fetchTrades(network, address).then(function(trades){
         appendTradeRows(trades, state.currentModalPool ? state.currentModalPool.baseAddress : pool.baseAddress);
-        if(state.chartTimeframe === '1s' && trades && trades.length > 0){
-          const rebuilt = aggregateTradesToCandles(trades, state.currentModalPool ? state.currentModalPool.baseAddress : pool.baseAddress);
-          if(rebuilt.length > 0){
-            state.lwSeries.setData(rebuilt);
-            state.currentCandles = rebuilt;
-          }
-        }
       });
     }, 6000);
   }
   function closeChartModal(){
     state.chartModalOpen = false;
     els.chartModal.classList.remove('open');
+    els.chartModalIframe.src = '';
     clearTimeout(state._chartLoadTimeout);
     clearInterval(state._chartPriceInterval);
     clearInterval(state._chartTradesInterval);
