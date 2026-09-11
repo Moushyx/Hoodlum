@@ -1883,7 +1883,7 @@ window.addEventListener('error', function(e){
     state.lwChart = LightweightCharts.createChart(els.chartCanvas, {
       layout: { background: { color: 'transparent' }, textColor: '#8B8B9E', fontFamily: 'IBM Plex Mono, monospace', fontSize: 11 },
       grid: { vertLines: { color: 'rgba(255,255,255,0.05)' }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
-      timeScale: { timeVisible: true, secondsVisible: true, borderColor: 'rgba(255,255,255,0.09)', barSpacing: 10 },
+      timeScale: { timeVisible: true, secondsVisible: true, borderColor: 'rgba(255,255,255,0.09)' },
       rightPriceScale: { borderColor: 'rgba(255,255,255,0.09)' },
       autoSize: true
     });
@@ -1892,6 +1892,20 @@ window.addEventListener('error', function(e){
       wickUpColor: '#34D399', wickDownColor: '#FB7185'
     });
     return state.lwChart;
+  }
+
+  function applyReasonableView(candleCount){
+    if(!state.lwChart || candleCount === 0) return;
+    const desiredVisibleBars = 30;
+    const lastIndex = candleCount - 1;
+    try{
+      state.lwChart.timeScale().setVisibleLogicalRange({
+        from: lastIndex - desiredVisibleBars + 1,
+        to: lastIndex + 2
+      });
+    }catch(err){
+      console.warn('Hoodlum: ajustement du zoom impossible', err);
+    }
   }
 
   function seedFromPrice(pool){
@@ -1941,7 +1955,7 @@ window.addEventListener('error', function(e){
     state.currentCandles = candles;
     if(!state.candleCache) state.candleCache = {};
     state.candleCache[state.chartTimeframe] = candles;
-    if(candles.length >= 15) state.lwChart.timeScale().fitContent();
+    applyReasonableView(candles.length);
   }
 
   function updateLiveCandle(priceUsd){
@@ -1969,7 +1983,7 @@ window.addEventListener('error', function(e){
       const cached = state.candleCache[tf];
       state.lwSeries.setData(cached);
       state.currentCandles = cached;
-      if(cached.length >= 15) state.lwChart.timeScale().fitContent();
+      applyReasonableView(cached.length);
       loadChart(state.currentModalPool, null, true); // refresh quietly, no spinner
     } else {
       loadChart(state.currentModalPool);
