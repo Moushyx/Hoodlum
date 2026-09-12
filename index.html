@@ -155,10 +155,14 @@
   .list{ padding:6px 16px 0; display:flex; flex-direction:column; gap:9px; }
   .row{
     display:block; background:var(--surface); border:1px solid var(--border);
+    border-left:3px solid var(--border);
     border-radius:16px; padding:13px 14px; text-decoration:none; color:var(--text);
     cursor:pointer;
     transition:border-color .15s ease, background .15s ease;
   }
+  .row.risk-accent-high{ border-left-color:var(--red); }
+  .row.risk-accent-mid{ border-left-color:var(--yellow); }
+  .row.risk-accent-low{ border-left-color:var(--green); }
   .row:active{background:var(--surface-2);}
   .row-top{ display:flex; align-items:center; gap:10px; }
   .avatar{
@@ -432,6 +436,8 @@
   .trade-kind.neg{ color:var(--red); }
   .trade-vol, .trade-amount{ font-family:var(--mono); }
   .trade-trader, .trade-time{ color:var(--text-muted); font-family:var(--mono); font-size:10.5px; }
+  .trade-trader[data-copy-trader]{ text-decoration:underline dotted; text-underline-offset:2px; cursor:pointer; }
+  .trade-trader.copied{ color:var(--green); }
   @keyframes tradeFlash{
     0%{ background:rgba(34,211,238,0.22); }
     100%{ background:transparent; }
@@ -851,6 +857,7 @@ window.addEventListener('error', function(e){
     aSave: document.getElementById('a-save'),
     paperBuyRow: document.getElementById('paper-buy-row'),
     tokenDetailWrap: document.getElementById('token-detail-wrap'),
+    tradesFeedWrap: document.getElementById('trades-feed-wrap'),
     paperSellSection: document.getElementById('paper-sell-section'),
     paperToast: document.getElementById('paper-toast')
   };
@@ -1019,7 +1026,8 @@ window.addEventListener('error', function(e){
       change5m: (p.priceChange && parseFloat(p.priceChange.m5)) || 0,
       txH1: { buys: txH1.buys || 0, sells: txH1.sells || 0 },
       txH24: { buys: txH24.buys || 0, sells: txH24.sells || 0 },
-      createdAt: p.pairCreatedAt ? new Date(p.pairCreatedAt) : null
+      createdAt: p.pairCreatedAt ? new Date(p.pairCreatedAt) : null,
+      imageUrl: (p.info && p.info.imageUrl) || null
     };
   }
 
@@ -1734,7 +1742,7 @@ window.addEventListener('error', function(e){
     }
 
     return (
-      '<div class="row' + (isNew ? ' just-in' : '') + '" data-pool-id="' + escapeHTML(pool.id) + '" data-network="' + escapeHTML(pool.network) + '" data-address="' + escapeHTML(pool.address) + '" data-base-address="' + escapeHTML(pool.baseAddress) + '" data-pair="' + escapeHTML(pool.base) + ' / ' + escapeHTML(pool.quote) + '">' +
+      '<div class="row risk-accent-' + risk.cls.replace('risk-', '') + (isNew ? ' just-in' : '') + '" data-pool-id="' + escapeHTML(pool.id) + '" data-network="' + escapeHTML(pool.network) + '" data-address="' + escapeHTML(pool.address) + '" data-base-address="' + escapeHTML(pool.baseAddress) + '" data-pair="' + escapeHTML(pool.base) + ' / ' + escapeHTML(pool.quote) + '">' +
         '<div class="row-top">' +
           avatarHTML(pool) +
           '<div class="row-main">' +
@@ -2322,7 +2330,7 @@ window.addEventListener('error', function(e){
     return (
       '<div class="trades-feed">' +
         '<div class="td-group-title">Activité récente</div>' +
-        '<div class="trade-row trade-head"><span>Type</span><span>Volume</span><span>Montant</span><span>Trader</span><span>Il y a</span></div>' +
+        '<div class="trade-row trade-head"><span>Type</span><span>Volume</span><span>Prix</span><span>Trader</span><span>Il y a</span></div>' +
         '<div id="trades-body"><p class="swap-hint" id="trades-empty-msg">Chargement…</p></div>' +
       '</div>'
     );
@@ -2331,21 +2339,17 @@ window.addEventListener('error', function(e){
   function tradeRowHTML(t, baseAddress, isNew){
     const a = t.attributes || {};
     const isBuy = a.kind === 'buy';
-    const baseLower = (baseAddress || '').toLowerCase();
-    const tokenAmount = isBuy
-      ? ((a.to_token_address || '').toLowerCase() === baseLower ? a.to_token_amount : a.from_token_amount)
-      : ((a.from_token_address || '').toLowerCase() === baseLower ? a.from_token_amount : a.to_token_amount);
-    const amountNum = parseFloat(tokenAmount) || 0;
-    const amountFmt = amountNum >= 1e6 ? (amountNum / 1e6).toFixed(2) + 'M' : amountNum >= 1e3 ? (amountNum / 1e3).toFixed(1) + 'k' : amountNum.toFixed(2);
+    const price = priceFromTrade(a, baseAddress);
     const vol = formatUSD(parseFloat(a.volume_in_usd) || 0);
+    const priceFmt = price ? '$' + formatPrice(price) : '—';
     const trader = a.tx_from_address ? (a.tx_from_address.slice(0, 4) + '…' + a.tx_from_address.slice(-4)) : '—';
     const ts = a.block_timestamp ? formatAge(new Date(a.block_timestamp)) : '—';
     return (
       '<div class="trade-row' + (isNew ? ' just-in' : '') + '">' +
         '<span class="trade-kind ' + (isBuy ? 'pos' : 'neg') + '">' + (isBuy ? 'Achat' : 'Vente') + '</span>' +
         '<span class="trade-vol">' + vol + '</span>' +
-        '<span class="trade-amount">' + amountFmt + '</span>' +
-        '<span class="trade-trader">' + escapeHTML(trader) + '</span>' +
+        '<span class="trade-amount">' + priceFmt + '</span>' +
+        '<span class="trade-trader" data-copy-trader="' + escapeHTML(a.tx_from_address || '') + '">' + escapeHTML(trader) + '</span>' +
         '<span class="trade-time">' + ts + '</span>' +
       '</div>'
     );
@@ -2417,6 +2421,10 @@ window.addEventListener('error', function(e){
         state.currentModalPool.change1h = fresh.change1h;
         state.currentModalPool.change6h = fresh.change6h;
         state.currentModalPool.change5m = fresh.change5m;
+        if(fresh.imageUrl && state.currentModalPool.baseAddress){
+          const imgKey = network + ':' + state.currentModalPool.baseAddress.toLowerCase();
+          if(!state.imageCache[imgKey]) state.imageCache[imgKey] = fresh.imageUrl;
+        }
         const merged = state.currentModalPool;
         renderPositionBadge(merged);
         const secKey = merged.baseAddress ? network + ':' + merged.baseAddress.toLowerCase() : '';
@@ -2516,6 +2524,26 @@ window.addEventListener('error', function(e){
     if(!btn) return;
     switchTimeframe(btn.dataset.tf);
   });
+  els.tradesFeedWrap.addEventListener('click', function(e){
+    const el = e.target.closest('[data-copy-trader]');
+    if(!el) return;
+    const addr = el.dataset.copyTrader;
+    if(!addr) return;
+    const original = el.textContent;
+    const done = function(){
+      el.classList.add('copied');
+      el.textContent = '✓ copié';
+      setTimeout(function(){
+        el.classList.remove('copied');
+        el.textContent = original;
+      }, 1400);
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(addr).then(done).catch(function(){ showToast('Copie impossible'); });
+    } else {
+      showToast('Copie non supportée par ce navigateur');
+    }
+  });
   els.tokenDetailWrap.addEventListener('click', function(e){
     const starBtn = e.target.closest('.td-star');
     if(starBtn){
@@ -2572,6 +2600,12 @@ window.addEventListener('error', function(e){
       p.change1h = fresh.change1h;
       p.change6h = fresh.change6h;
       p.change5m = fresh.change5m;
+      // Image fallback: very new tokens often aren't indexed by GeckoTerminal yet,
+      // but DexScreener frequently has the launchpad's image sooner.
+      if(fresh.imageUrl && p.baseAddress){
+        const imgKey = p.network + ':' + p.baseAddress.toLowerCase();
+        if(!state.imageCache[imgKey]) state.imageCache[imgKey] = fresh.imageUrl;
+      }
       touched = true;
     });
     return touched;
