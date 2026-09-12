@@ -339,7 +339,16 @@
   .rug-verdict-ok{ background:rgba(52,211,153,0.12); color:var(--green); }
   .rug-verdict-unknown{ background:var(--surface); color:var(--text-muted); }
   .rug-disclaimer{ margin-top:10px; font-size:10.5px; color:var(--text-muted); line-height:1.5; }
-  .position-monitor{ padding:12px 16px; background:rgba(168,85,247,0.06); border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+  .position-monitor{
+    padding:12px 16px;
+    background-image:linear-gradient(rgba(168,85,247,0.10), rgba(168,85,247,0.10));
+    background-color:var(--surface-solid);
+    border-top:1px solid var(--border); border-bottom:1px solid var(--border);
+  }
+  .trading-block{ background:var(--surface-solid); border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+  .trading-block .position-monitor{ border-top:none; border-bottom:1px solid var(--border); }
+  .trading-block .paper-buy-row{ border-bottom:none; }
+  .trading-block .paper-buy-row:not(:last-child){ border-bottom:1px solid var(--border); }
   .onboard-backdrop{
     position:fixed; inset:0; z-index:60; background:rgba(0,0,0,0.75);
     display:none; align-items:center; justify-content:center; padding:20px;
@@ -699,21 +708,22 @@
   <div class="chart-modal-scroll" id="chart-modal-scroll">
     <div class="score-panel" id="score-panel"></div>
     <div id="token-detail-wrap"></div>
-    <div id="trades-feed-wrap"></div>
-    <div class="paper-buy-row" id="paper-buy-row">
-      <span class="paper-buy-label" id="paper-cash-label">Solde fictif : 1 000 $</span>
-      <button class="paper-buy-btn" data-pct="0.1">Acheter 10%</button>
-      <button class="paper-buy-btn" data-pct="0.25">Acheter 25%</button>
-      <button class="paper-buy-btn" data-pct="0.5">Acheter 50%</button>
-      <button class="paper-buy-btn" data-pct="1">Acheter tout</button>
+    <div class="trading-block">
+      <div id="position-monitor-wrap"></div>
+      <div class="paper-buy-row" id="paper-buy-row">
+        <span class="paper-buy-label" id="paper-cash-label">Solde fictif : 1 000 $</span>
+        <button class="paper-buy-btn" data-pct="0.1">Acheter 10%</button>
+        <button class="paper-buy-btn" data-pct="0.25">Acheter 25%</button>
+        <button class="paper-buy-btn" data-pct="0.5">Acheter 50%</button>
+        <button class="paper-buy-btn" data-pct="1">Acheter tout</button>
+      </div>
+      <div class="paper-buy-row" id="paper-sell-section" style="display:none;">
+        <span class="paper-buy-label">Ta position — vendre :</span>
+        <button class="paper-buy-btn sell" data-modal-sell-pct="0.25">Vendre 25%</button>
+        <button class="paper-buy-btn sell" data-modal-sell-pct="0.5">Vendre 50%</button>
+        <button class="paper-buy-btn sell" data-modal-sell-pct="1">Tout vendre</button>
+      </div>
     </div>
-    <div class="paper-buy-row" id="paper-sell-section" style="display:none;">
-      <span class="paper-buy-label">Ta position — vendre :</span>
-      <button class="paper-buy-btn sell" data-modal-sell-pct="0.25">Vendre 25%</button>
-      <button class="paper-buy-btn sell" data-modal-sell-pct="0.5">Vendre 50%</button>
-      <button class="paper-buy-btn sell" data-modal-sell-pct="1">Tout vendre</button>
-    </div>
-    <div id="position-monitor-wrap"></div>
     <div class="tf-row" id="tf-row">
       <button class="tf-btn active" data-tf="1s">1s</button>
       <button class="tf-btn" data-tf="1m">1m</button>
@@ -726,6 +736,7 @@
       <div class="position-badge" id="position-badge" style="display:none;"></div>
       <iframe id="chart-modal-iframe" src="" title="Graphique du token" scrolling="no" sandbox="allow-scripts allow-same-origin allow-forms" allow="clipboard-write"></iframe>
     </div>
+    <div id="trades-feed-wrap"></div>
   </div>
   <div class="chart-modal-footer">
     <a id="chart-modal-external" href="#" target="_blank" rel="noopener">Acheter / vendre sur GeckoTerminal ↗</a>
@@ -2413,7 +2424,7 @@ window.addEventListener('error', function(e){
         const wrap = document.getElementById('token-detail-wrap');
         if(wrap) wrap.innerHTML = tokenDetailHTML(merged, freshSec);
       });
-    }, 1500);
+    }, 1000);
 
     state._chartFullInterval = setInterval(function(){
       fetchSinglePool(network, address).then(function(full){
@@ -2586,7 +2597,7 @@ window.addEventListener('error', function(e){
         render();
       }
     });
-  }, 4000);
+  }, 1000);
 
   (function setupOnboarding(){
     const steps = [
