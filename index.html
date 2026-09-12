@@ -269,7 +269,7 @@
   .chart-modal-title{ font-weight:700; font-size:15px; }
   .chart-modal-scroll{ flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; display:flex; flex-direction:column; }
   .chart-modal-body{ flex:0 0 auto; background:#0A0A10; position:relative; }
-  .chart-modal-body iframe{ width:100%; height:min(62vh, 480px); min-height:340px; border:0; }
+  .chart-modal-body iframe{ width:100%; height:min(62vh, 480px); min-height:340px; border:0; touch-action:pan-y; }
   .chart-loading{
     position:absolute; top:0; left:0; right:0; height:min(62vh, 480px); min-height:340px;
     display:flex; align-items:center; justify-content:center;
@@ -917,6 +917,48 @@ window.addEventListener('error', function(e){
     const json = await fetchJSON(url);
     if(!json || !json.data) return null;
     return parsePool(json.data, network);
+  }
+
+  function parseDexScreenerPair(p, network){
+    const txH1 = (p.txns && p.txns.h1) || { buys: 0, sells: 0 };
+    const txH24 = (p.txns && p.txns.h24) || { buys: 0, sells: 0 };
+    return {
+      id: p.pairAddress,
+      network: network,
+      address: p.pairAddress || '',
+      baseAddress: (p.baseToken && p.baseToken.address) || '',
+      dexId: p.dexId || '',
+      base: (p.baseToken && p.baseToken.symbol) || '?',
+      quote: (p.quoteToken && p.quoteToken.symbol) || '?',
+      priceUsd: parseFloat(p.priceUsd) || 0,
+      priceNative: p.priceNative ? parseFloat(p.priceNative) : null,
+      liquidity: (p.liquidity && parseFloat(p.liquidity.usd)) || 0,
+      volume24h: (p.volume && parseFloat(p.volume.h24)) || 0,
+      volume1h: (p.volume && parseFloat(p.volume.h1)) || 0,
+      volume6h: (p.volume && parseFloat(p.volume.h6)) || 0,
+      fdv: p.fdv != null ? parseFloat(p.fdv) : null,
+      marketCap: p.marketCap != null ? parseFloat(p.marketCap) : null,
+      change24h: (p.priceChange && parseFloat(p.priceChange.h24)) || 0,
+      change1h: (p.priceChange && parseFloat(p.priceChange.h1)) || 0,
+      change6h: (p.priceChange && parseFloat(p.priceChange.h6)) || 0,
+      change5m: (p.priceChange && parseFloat(p.priceChange.m5)) || 0,
+      txH1: { buys: txH1.buys || 0, sells: txH1.sells || 0 },
+      txH24: { buys: txH24.buys || 0, sells: txH24.sells || 0 },
+      createdAt: p.pairCreatedAt ? new Date(p.pairCreatedAt) : null
+    };
+  }
+
+  async function fetchSinglePoolFast(network, address){
+    try{
+      const url = 'https://api.dexscreener.com/latest/dex/pairs/' + network + '/' + address;
+      const json = await fetchJSON(url);
+      const pair = json && json.pairs && json.pairs[0];
+      if(!pair) return null;
+      return parseDexScreenerPair(pair, network);
+    }catch(err){
+      console.warn('Hoodlum: DexScreener indisponible, repli sur GeckoTerminal', err);
+      return fetchSinglePool(network, address);
+    }
   }
 
   async function fetchTrades(network, poolAddress){
@@ -2119,7 +2161,7 @@ window.addEventListener('error', function(e){
     clearInterval(state._chartTradesInterval);
 
     state._chartPriceInterval = setInterval(function(){
-      fetchSinglePool(network, address).then(function(fresh){
+      fetchSinglePoolFast(network, address).then(function(fresh){
         if(!fresh) return;
         state.currentModalPool = fresh;
         renderPositionBadge(fresh);
@@ -2128,13 +2170,13 @@ window.addEventListener('error', function(e){
         const wrap = document.getElementById('token-detail-wrap');
         if(wrap) wrap.innerHTML = tokenDetailHTML(fresh, freshSec);
       });
-    }, 3000);
+    }, 1500);
 
     state._chartTradesInterval = setInterval(function(){
       fetchTrades(network, address).then(function(trades){
         appendTradeRows(trades, state.currentModalPool ? state.currentModalPool.baseAddress : pool.baseAddress);
       });
-    }, 6000);
+    }, 3000);
   }
   function closeChartModal(){
     state.chartModalOpen = false;
