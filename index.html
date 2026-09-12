@@ -308,6 +308,13 @@
     font-size:12px; color:var(--text-muted); line-height:1.5;
   }
   .score-summary strong{ color:var(--text); }
+  .rug-panel{ margin-top:16px; padding-top:14px; border-top:1px solid var(--border); }
+  .rug-verdict{ font-weight:700; font-size:13px; padding:10px 12px; border-radius:10px; margin-bottom:10px; }
+  .rug-verdict-bad{ background:rgba(251,113,133,0.12); color:var(--red); }
+  .rug-verdict-warn{ background:rgba(251,191,36,0.12); color:var(--yellow); }
+  .rug-verdict-ok{ background:rgba(52,211,153,0.12); color:var(--green); }
+  .rug-verdict-unknown{ background:var(--surface); color:var(--text-muted); }
+  .rug-disclaimer{ margin-top:10px; font-size:10.5px; color:var(--text-muted); line-height:1.5; }
   .score-panel .score-bar{ margin-top:6px; }
   .chart-modal-footer a{
     display:block; text-align:center;
@@ -321,8 +328,12 @@
       radial-gradient(circle at 100% 0%, rgba(34,211,238,0.08), transparent 55%),
       var(--surface-solid);
   }
-  .token-detail-hero{ display:flex; align-items:baseline; gap:10px; margin-bottom:16px; }
-  .td-hero-price{ font-family:var(--mono); font-weight:800; font-size:22px; }
+  .token-detail-hero{ margin-bottom:16px; }
+  .td-hero-mcap{ font-family:var(--mono); font-weight:800; font-size:28px; line-height:1.1; }
+  .td-hero-mcap-label{ font-size:11px; color:var(--text-muted); margin-top:2px; margin-bottom:8px; }
+  .td-hero-price-row{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .td-hero-price{ font-family:var(--mono); font-weight:700; font-size:15px; }
+  .td-hero-native{ font-family:var(--mono); font-size:11.5px; color:var(--text-muted); }
   .td-group{ margin-bottom:16px; }
   .td-group-title{
     font-family:var(--display); font-weight:700; font-size:11.5px;
@@ -846,6 +857,7 @@ window.addEventListener('error', function(e){
       base: parts[0] || '?',
       quote: parts[1] || '?',
       priceUsd: parseFloat(a.base_token_price_usd) || 0,
+      priceNative: a.base_token_price_quote_token ? parseFloat(a.base_token_price_quote_token) : null,
       liquidity: parseFloat(a.reserve_in_usd) || 0,
       volume24h: parseFloat(vol.h24) || 0,
       fdv: a.fdv_usd ? parseFloat(a.fdv_usd) : null,
@@ -959,13 +971,33 @@ window.addEventListener('error', function(e){
           if(v && typeof v === 'object' && (v.status === '1' || v.status === 1)) return true;
           return false;
         }
+        function flagOrNull(v){
+          if(v === undefined || v === null) return null;
+          return flag(v);
+        }
+        let topHolderPct = null;
+        if(Array.isArray(sec.holders) && sec.holders.length > 0){
+          const top = sec.holders.slice(0, 10).reduce(function(sum, h){ return sum + (parseFloat(h && h.percent) || 0); }, 0);
+          if(top > 0) topHolderPct = Math.round(top * 100);
+        }
+        const creatorPct = sec.creator_percent != null ? Math.round(parseFloat(sec.creator_percent) * 100)
+          : (sec.owner_percent != null ? Math.round(parseFloat(sec.owner_percent) * 100) : null);
         state.securityCache[network + ':' + addr.toLowerCase()] = {
           mintable: flag(sec.is_mintable) || flag(sec.mintable),
-          blacklist: flag(sec.is_blacklisted) || flag(sec.transfer_pausable),
+          blacklist: flag(sec.is_blacklisted),
           lpLockedPct: lpLockedPct,
           holderCount: sec.holder_count != null ? parseInt(sec.holder_count, 10) : null,
           buyTax: sec.buy_tax != null ? Math.round(parseFloat(sec.buy_tax) * 100) : null,
-          sellTax: sec.sell_tax != null ? Math.round(parseFloat(sec.sell_tax) * 100) : null
+          sellTax: sec.sell_tax != null ? Math.round(parseFloat(sec.sell_tax) * 100) : null,
+          openSource: flagOrNull(sec.is_open_source),
+          isProxy: flagOrNull(sec.is_proxy),
+          selfDestruct: flagOrNull(sec.selfdestruct),
+          hiddenOwner: flagOrNull(sec.hidden_owner),
+          canReclaimOwnership: flagOrNull(sec.can_take_back_ownership),
+          transferPausable: flagOrNull(sec.transfer_pausable),
+          isHoneypot: flagOrNull(sec.is_honeypot),
+          topHolderPct: topHolderPct,
+          creatorPct: creatorPct
         };
       });
     }catch(err){
@@ -1206,6 +1238,69 @@ window.addEventListener('error', function(e){
     return '<div class="avatar-fallback" style="background:' + color + '">' + letter + '</div>';
   }
 
+  function computeRugSignals(pool, sec, network){
+    const signals = [];
+    function add(label, status, detail){
+      signals.push({ label: label, status: status, detail: detail });
+    }
+
+    // Liquidity-side checks (available on every chain)
+    add('Liquidité', pool.liquidity < 2000 ? 'bad' : (pool.liquidity < 8000 ? 'warn' : 'ok'),
+      pool.liquidity < 2000 ? 'Très faible — un retrait de liquidité serait presque indolore pour le créateur' : formatUSD(pool.liquidity));
+
+    if(pool.fdv && pool.liquidity){
+      const ratio = pool.liquidity / pool.fdv;
+      add('Liquidité vs FDV', ratio < 0.03 ? 'bad' : (ratio < 0.08 ? 'warn' : 'ok'),
+        ratio < 0.03 ? 'FDV élevé pour très peu de liquidité réelle — prix potentiellement artificiel' : (Math.round(ratio * 100) + '% de la FDV en liquidité'));
+    } else {
+      add('Liquidité vs FDV', 'unknown', 'Donnée insuffisante');
+    }
+
+    if(!sec){
+      add('Vérification du contrat', 'unknown', 'Pas encore analysé par GoPlus (token très récent)');
+    } else {
+      add('Mint', sec.mintable ? 'bad' : 'ok', sec.mintable ? 'Le créateur peut encore créer de nouveaux tokens' : 'Désactivé');
+      add('LP verrouillée', sec.lpLockedPct === null ? 'unknown' : (sec.lpLockedPct >= 80 ? 'ok' : 'bad'),
+        sec.lpLockedPct === null ? 'Inconnu' : sec.lpLockedPct + '% verrouillé');
+      add('Blacklist', sec.blacklist ? 'bad' : 'ok', sec.blacklist ? 'Le contrat peut bloquer des wallets spécifiques' : 'Aucune fonction détectée');
+
+      if(network !== 'solana'){
+        add('Honeypot', sec.isHoneypot === null ? 'unknown' : (sec.isHoneypot ? 'bad' : 'ok'),
+          sec.isHoneypot ? 'Détecté — achat possible mais pas la revente' : (sec.isHoneypot === false ? 'Non détecté' : 'Inconnu'));
+        add('Code source', sec.openSource === null ? 'unknown' : (sec.openSource ? 'ok' : 'bad'),
+          sec.openSource === false ? 'Non vérifié — personne ne peut auditer le code' : (sec.openSource ? 'Vérifié' : 'Inconnu'));
+        add('Contrat modifiable (proxy)', sec.isProxy === null ? 'unknown' : (sec.isProxy ? 'warn' : 'ok'),
+          sec.isProxy ? 'Le comportement du contrat peut changer après coup' : 'Non modifiable');
+        add('Propriétaire caché', sec.hiddenOwner === null ? 'unknown' : (sec.hiddenOwner ? 'bad' : 'ok'),
+          sec.hiddenOwner ? 'Un propriétaire caché peut garder le contrôle' : 'Aucun détecté');
+        add('Reprise de contrôle possible', sec.canReclaimOwnership === null ? 'unknown' : (sec.canReclaimOwnership ? 'bad' : 'ok'),
+          sec.canReclaimOwnership ? 'Le renoncement de propriété peut être annulé' : 'Non');
+        add('Transferts gelables', sec.transferPausable === null ? 'unknown' : (sec.transferPausable ? 'bad' : 'ok'),
+          sec.transferPausable ? 'Le contrat peut bloquer tous les transferts' : 'Non');
+        const maxTax = Math.max(sec.buyTax || 0, sec.sellTax || 0);
+        add('Taxes', (sec.buyTax === null && sec.sellTax === null) ? 'unknown' : (maxTax > 15 ? 'bad' : (maxTax > 5 ? 'warn' : 'ok')),
+          (sec.buyTax === null && sec.sellTax === null) ? 'Inconnu' : (sec.buyTax + '% achat / ' + sec.sellTax + '% vente'));
+      }
+
+      add('Concentration (top 10 holders)', sec.topHolderPct === null ? 'unknown' : (sec.topHolderPct > 50 ? 'bad' : (sec.topHolderPct > 30 ? 'warn' : 'ok')),
+        sec.topHolderPct === null ? 'Inconnu' : (sec.topHolderPct + '% de l\'offre'));
+      add('Part du créateur', sec.creatorPct === null ? 'unknown' : (sec.creatorPct > 15 ? 'bad' : (sec.creatorPct > 5 ? 'warn' : 'ok')),
+        sec.creatorPct === null ? 'Inconnu' : (sec.creatorPct + '% de l\'offre'));
+    }
+
+    const known = signals.filter(function(s){ return s.status !== 'unknown'; });
+    const badCount = known.filter(function(s){ return s.status === 'bad'; }).length;
+    const warnCount = known.filter(function(s){ return s.status === 'warn'; }).length;
+    let verdict, verdictCls;
+    if(known.length === 0){ verdict = 'Pas assez de données pour analyser ce token'; verdictCls = 'unknown'; }
+    else if(badCount >= 3){ verdict = badCount + ' signaux de rug pull classiques détectés — extrême prudence'; verdictCls = 'bad'; }
+    else if(badCount >= 1){ verdict = badCount + ' signal(aux) préoccupant(s) détecté(s)'; verdictCls = 'bad'; }
+    else if(warnCount >= 2){ verdict = 'Quelques signaux à surveiller, rien de rédhibitoire'; verdictCls = 'warn'; }
+    else { verdict = 'Aucun signal classique de rug détecté sur ' + known.length + ' critères vérifiés'; verdictCls = 'ok'; }
+
+    return { signals: signals, verdict: verdict, verdictCls: verdictCls, badCount: badCount };
+  }
+
   function computeScore(pool, sec){
     // Each part is 0-100; "null" means unknown (drawn as a low-confidence stub on the radar).
     let liq;
@@ -1284,6 +1379,26 @@ window.addEventListener('error', function(e){
     );
   }
 
+  function rugSignalsHTML(pool, sec, network){
+    const analysis = computeRugSignals(pool, sec, network);
+    const dotCls = { bad: 'on-low', warn: 'on-mid', ok: 'on-high', unknown: 'on-unknown' };
+    return (
+      '<div class="rug-panel">' +
+        '<div class="td-group-title">Analyse anti-rug</div>' +
+        '<div class="rug-verdict rug-verdict-' + analysis.verdictCls + '">' + escapeHTML(analysis.verdict) + '</div>' +
+        '<div class="rug-list">' +
+          analysis.signals.map(function(s){
+            return '<div class="score-detail-row">' +
+              '<span class="sd-label"><span class="sd-dot ' + dotCls[s.status] + '"></span>' + escapeHTML(s.label) + '</span>' +
+              '<span class="sd-value" style="font-size:11px;font-weight:600;">' + escapeHTML(s.detail) + '</span>' +
+            '</div>';
+          }).join('') +
+        '</div>' +
+        '<div class="rug-disclaimer">Vérification de motifs connus, pas une prédiction. Un rug bien préparé peut cocher toutes ces cases — ceci réduit le risque évident, ne l\'annule pas. Pas un conseil financier.</div>' +
+      '</div>'
+    );
+  }
+
   function scoreDetailHTML(pool, sec, parts){
     const bp = buyPressure(pool.txH1);
     const tierOf = function(v){ return v === null ? 'on-unknown' : (v >= 70 ? 'on-high' : v >= 40 ? 'on-mid' : 'on-low'); };
@@ -1312,6 +1427,7 @@ window.addEventListener('error', function(e){
           '</div>';
         }).join('') +
         '<div class="score-summary"><strong>' + known.length + '/5 critères connus</strong>, ' + positive + ' en zone favorable — ' + verdict + '. Indicatif seulement, pas un conseil d\'achat.</div>' +
+        rugSignalsHTML(pool, sec, pool.network) +
       '</div>'
     );
   }
@@ -1347,8 +1463,13 @@ window.addEventListener('error', function(e){
     return (
       '<div class="token-detail">' +
         '<div class="token-detail-hero">' +
-          '<div class="td-hero-price">$' + formatPrice(pool.priceUsd) + '</div>' +
-          '<div class="change ' + changeCls + '" style="font-size:13px;">' + changeSign + pool.change24h.toFixed(1) + '% · 24h</div>' +
+          '<div class="td-hero-mcap">' + (pool.marketCap !== null ? formatUSD(pool.marketCap) : (pool.fdv !== null ? formatUSD(pool.fdv) : '—')) + '</div>' +
+          '<div class="td-hero-mcap-label">Capitalisation boursière</div>' +
+          '<div class="td-hero-price-row">' +
+            '<span class="td-hero-price">$' + formatPrice(pool.priceUsd) + '</span>' +
+            '<span class="change ' + changeCls + '" style="font-size:12.5px;">' + changeSign + pool.change24h.toFixed(1) + '%</span>' +
+            (pool.priceNative !== null ? '<span class="td-hero-native">≈ ' + formatPrice(pool.priceNative) + ' ' + escapeHTML(pool.quote) + '</span>' : '') +
+          '</div>' +
         '</div>' +
         '<div class="tf-strip">' +
           tfChip('5M', pool.change5m) + tfChip('1H', pool.change1h) + tfChip('6H', pool.change6h) + tfChip('24H', pool.change24h) +
