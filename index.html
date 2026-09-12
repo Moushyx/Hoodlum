@@ -28,7 +28,7 @@
     --mono:'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
   }
   *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;}
+  html,body{margin:0;padding:0;overflow-x:hidden;}
   body{
     background:
       radial-gradient(circle at 15% 0%, rgba(168,85,247,0.16), transparent 45%),
@@ -267,7 +267,7 @@
     padding:14px 16px; background:var(--surface-solid); border-bottom:1px solid var(--border);
   }
   .chart-modal-title{ font-weight:700; font-size:15px; }
-  .chart-modal-scroll{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; display:flex; flex-direction:column; }
+  .chart-modal-scroll{ flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; display:flex; flex-direction:column; }
   .chart-modal-body{ flex:0 0 auto; background:#0A0A10; position:relative; }
   .chart-modal-body iframe{ width:100%; height:min(62vh, 480px); min-height:340px; border:0; }
   .chart-loading{
@@ -329,6 +329,10 @@
       var(--surface-solid);
   }
   .token-detail-hero{ margin-bottom:16px; }
+  .token-detail-hero-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .td-creator{ font-size:11px; color:var(--text-muted); font-family:var(--mono); }
+  .td-star{ background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:5px 12px; font-size:11.5px; font-family:var(--display); color:var(--text-muted); }
+  .td-star.active{ color:var(--yellow); border-color:rgba(251,191,36,0.4); }
   .td-hero-mcap{ font-family:var(--mono); font-weight:800; font-size:28px; line-height:1.1; }
   .td-hero-mcap-label{ font-size:11px; color:var(--text-muted); margin-top:2px; margin-bottom:8px; }
   .td-hero-price-row{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
@@ -344,12 +348,12 @@
   }
   .token-detail-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
   .td-item{
-    display:flex; flex-direction:column; gap:3px;
+    display:flex; flex-direction:column; gap:3px; min-width:0;
     background:var(--surface); border:1px solid var(--border); border-radius:10px;
     padding:8px 10px;
   }
   .td-label{ font-size:10px; color:var(--text-muted); }
-  .td-value{ font-family:var(--mono); font-weight:700; font-size:13px; }
+  .td-value{ font-family:var(--mono); font-weight:700; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .td-address{
     display:block; width:100%; padding:10px; text-align:center;
     background:var(--surface); border:1px solid var(--border); border-radius:10px;
@@ -357,7 +361,7 @@
   }
   .td-address.copied{ color:var(--green); border-color:rgba(52,211,153,0.5); }
   .tf-strip{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px; }
-  .tf-chip{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 6px; text-align:center; }
+  .tf-chip{ min-width:0; overflow:hidden; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 6px; text-align:center; }
   .tf-chip-label{ font-size:9.5px; color:var(--text-muted); font-family:var(--mono); }
   .buysell-bar{ display:flex; height:8px; border-radius:4px; overflow:hidden; margin-bottom:6px; }
   .bs-buy{ background:var(--green); }
@@ -369,6 +373,7 @@
     gap:4px; align-items:center; padding:7px 0; font-size:11px;
     border-bottom:1px solid rgba(255,255,255,0.05);
   }
+  .trade-row > span{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .trade-row.trade-head{ color:var(--text-muted); font-size:10px; text-transform:uppercase; letter-spacing:0.02em; border-bottom:1px solid var(--border); }
   .trade-kind{ font-weight:700; font-family:var(--mono); }
   .trade-kind.pos{ color:var(--green); }
@@ -997,7 +1002,8 @@ window.addEventListener('error', function(e){
           transferPausable: flagOrNull(sec.transfer_pausable),
           isHoneypot: flagOrNull(sec.is_honeypot),
           topHolderPct: topHolderPct,
-          creatorPct: creatorPct
+          creatorPct: creatorPct,
+          creatorAddress: sec.creator_address || null
         };
       });
     }catch(err){
@@ -1107,6 +1113,9 @@ window.addEventListener('error', function(e){
       showToast('Solde fictif insuffisant');
       return;
     }
+    const secKey = pool.baseAddress ? pool.network + ':' + pool.baseAddress.toLowerCase() : '';
+    const sec = secKey ? state.securityCache[secKey] : null;
+    const entryScore = computeScore(pool, sec).total;
     state.paper.cash = Math.round((state.paper.cash - usdAmount) * 100) / 100;
     state.paper.positions.push({
       id: pool.network + ':' + pool.address + ':' + Date.now(),
@@ -1115,7 +1124,9 @@ window.addEventListener('error', function(e){
       baseAddress: pool.baseAddress,
       base: pool.base,
       quote: pool.quote,
+      dexId: pool.dexId,
       entryPrice: pool.priceUsd,
+      entryScore: entryScore,
       usdSpent: usdAmount,
       tokenQty: usdAmount / pool.priceUsd,
       openedAt: Date.now()
@@ -1462,6 +1473,10 @@ window.addEventListener('error', function(e){
 
     return (
       '<div class="token-detail">' +
+        '<div class="token-detail-hero-top">' +
+          (sec && sec.creatorAddress ? '<span class="td-creator">Créé par ' + escapeHTML(sec.creatorAddress.slice(0, 6) + '…' + sec.creatorAddress.slice(-4)) + '</span>' : '<span></span>') +
+          '<button class="star-btn td-star' + (isWatched(pool.network, pool.address) ? ' active' : '') + '" data-star-network="' + escapeHTML(pool.network) + '" data-star-address="' + escapeHTML(pool.address) + '" data-star-base="' + escapeHTML(pool.baseAddress) + '" data-star-base-label="' + escapeHTML(pool.base) + '" data-star-quote="' + escapeHTML(pool.quote) + '">' + (isWatched(pool.network, pool.address) ? '★ Watchlist' : '☆ Watchlist') + '</button>' +
+        '</div>' +
         '<div class="token-detail-hero">' +
           '<div class="td-hero-mcap">' + (pool.marketCap !== null ? formatUSD(pool.marketCap) : (pool.fdv !== null ? formatUSD(pool.fdv) : '—')) + '</div>' +
           '<div class="td-hero-mcap-label">Capitalisation boursière</div>' +
@@ -1767,6 +1782,8 @@ window.addEventListener('error', function(e){
       const pnlPct = pos.usdSpent ? (pnl / pos.usdSpent) * 100 : 0;
       const pnlCls = pnl >= 0 ? 'pos' : 'neg';
       const pnlSign = pnl >= 0 ? '+' : '';
+      const qtyFmt = pos.tokenQty >= 1e6 ? (pos.tokenQty / 1e6).toFixed(2) + 'M' : pos.tokenQty >= 1e3 ? (pos.tokenQty / 1e3).toFixed(2) + 'k' : pos.tokenQty.toFixed(2);
+      const scoreTxt = (pos.entryScore !== undefined && pos.entryScore !== null) ? pos.entryScore + '/100' : 'Non enregistré';
       return (
         '<div class="row">' +
           '<div class="row-main-top">' +
@@ -1775,7 +1792,15 @@ window.addEventListener('error', function(e){
           '</div>' +
           '<div class="row-sub">' +
             '<span class="change ' + pnlCls + '">' + pnlSign + formatUSD(pnl) + ' (' + pnlSign + pnlPct.toFixed(1) + '%)</span>' +
-            '<span class="meta">Entrée ' + formatUSD(pos.usdSpent) + ' · ' + escapeHTML(NETWORKS[pos.network].label) + '</span>' +
+            '<span class="meta">' + escapeHTML(NETWORKS[pos.network].label) + (pos.dexId ? ' · ' + escapeHTML(formatPlatform(pos.dexId)) : '') + '</span>' +
+          '</div>' +
+          '<div class="token-detail-grid" style="margin-top:10px;">' +
+            '<div class="td-item"><span class="td-label">Prix d\'entrée</span><span class="td-value">$' + formatPrice(pos.entryPrice) + '</span></div>' +
+            '<div class="td-item"><span class="td-label">Prix actuel</span><span class="td-value">' + (current ? '$' + formatPrice(current) : '—') + '</span></div>' +
+            '<div class="td-item"><span class="td-label">Quantité détenue</span><span class="td-value">' + qtyFmt + '</span></div>' +
+            '<div class="td-item"><span class="td-label">Détenu depuis</span><span class="td-value">' + formatAge(new Date(pos.openedAt)) + '</span></div>' +
+            '<div class="td-item"><span class="td-label">Investi</span><span class="td-value">' + formatUSD(pos.usdSpent) + '</span></div>' +
+            '<div class="td-item"><span class="td-label">Score à l\'achat</span><span class="td-value">' + scoreTxt + '</span></div>' +
           '</div>' +
           '<div class="sell-row">' +
             '<button class="paper-buy-btn" data-sell-id="' + escapeHTML(pos.id) + '" data-sell-price="' + (current || '') + '" data-sell-pct="0.25">Vendre 25%</button>' +
@@ -1793,6 +1818,26 @@ window.addEventListener('error', function(e){
     const totalPnlCls = totalPnl >= 0 ? 'pos' : 'neg';
     const totalPnlSign = totalPnl >= 0 ? '+' : '';
 
+    const historyRows = (state.paper.history || []).slice(0, 20).map(function(h){
+      const pnlCls = h.pnl >= 0 ? 'pos' : 'neg';
+      const pnlSign = h.pnl >= 0 ? '+' : '';
+      const pct = h.entryPrice ? ((h.exitPrice - h.entryPrice) / h.entryPrice) * 100 : 0;
+      return (
+        '<div class="row">' +
+          '<div class="row-main-top">' +
+            '<div class="pair">' + escapeHTML(h.base) + ' <span class="quote">/ ' + escapeHTML(h.quote) + '</span></div>' +
+            '<span class="change ' + pnlCls + '">' + pnlSign + formatUSD(h.pnl) + '</span>' +
+          '</div>' +
+          '<div class="token-detail-grid" style="margin-top:8px;">' +
+            '<div class="td-item"><span class="td-label">Prix d\'entrée</span><span class="td-value">$' + formatPrice(h.entryPrice) + '</span></div>' +
+            '<div class="td-item"><span class="td-label">Prix de sortie</span><span class="td-value">$' + formatPrice(h.exitPrice) + '</span></div>' +
+            '<div class="td-item"><span class="td-label">Variation</span><span class="td-value">' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%</span></div>' +
+            '<div class="td-item"><span class="td-label">Clôturé</span><span class="td-value">' + formatAge(new Date(h.closedAt)) + '</span></div>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join('');
+
     els.list.innerHTML =
       '<div class="row" style="text-align:center;">' +
         '<div class="score-panel-total" style="font-size:26px;">' + formatUSD(totalValue) + '</div>' +
@@ -1800,7 +1845,8 @@ window.addEventListener('error', function(e){
         '<div class="score-panel-caption" style="margin-top:6px;">' + formatUSD(state.paper.cash) + ' en liquide · ' + state.paper.positions.length + ' position(s) ouverte(s)</div>' +
         '<button class="btn ghost" style="margin-top:12px;" id="paper-reset-btn">Réinitialiser (1000$ fictifs)</button>' +
       '</div>' +
-      (rows || '<div class="empty">Aucune position. Ouvre une paire et utilise "Simulation d\'achat" en bas du graphique pour t\'entraîner sans argent réel.</div>');
+      (rows || '<div class="empty">Aucune position ouverte. Ouvre une paire et utilise "Simulation d\'achat" en bas du graphique pour t\'entraîner sans argent réel.</div>') +
+      (historyRows ? '<div class="td-group-title" style="margin:16px 2px 0;">Historique des ventes</div>' + historyRows : '');
 
     const resetBtn = document.getElementById('paper-reset-btn');
     if(resetBtn) resetBtn.addEventListener('click', function(){
@@ -2160,6 +2206,13 @@ window.addEventListener('error', function(e){
     switchTimeframe(btn.dataset.tf);
   });
   els.tokenDetailWrap.addEventListener('click', function(e){
+    const starBtn = e.target.closest('.td-star');
+    if(starBtn){
+      toggleWatch(starBtn.dataset.starNetwork, starBtn.dataset.starAddress, starBtn.dataset.starBase, starBtn.dataset.starBaseLabel, starBtn.dataset.starQuote);
+      const nowActive = starBtn.classList.toggle('active');
+      starBtn.textContent = nowActive ? '★ Watchlist' : '☆ Watchlist';
+      return;
+    }
     const copyBtn = e.target.closest('#td-copy-address');
     if(!copyBtn) return;
     const addr = copyBtn.dataset.address;
