@@ -166,7 +166,17 @@
   .star-btn.active{ color:var(--yellow); }
   .pair{ font-weight:700; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .pair .quote{ color:var(--text-muted); font-weight:500; font-size:12.5px; }
-  .price{ font-family:var(--mono); font-size:13.5px; color:var(--text-muted); flex:0 0 auto; }
+  .price{ font-family:var(--mono); font-size:13.5px; color:var(--text-muted); flex:0 0 auto; border-radius:4px; }
+  @keyframes priceFlashUp{
+    0%{ background:rgba(52,211,153,0.35); color:var(--green); }
+    100%{ background:transparent; color:var(--text-muted); }
+  }
+  @keyframes priceFlashDown{
+    0%{ background:rgba(251,113,133,0.35); color:var(--red); }
+    100%{ background:transparent; color:var(--text-muted); }
+  }
+  .price-flash-up{ animation:priceFlashUp 1.2s ease-out; }
+  .price-flash-down{ animation:priceFlashDown 1.2s ease-out; }
   .row-sub{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:4px; }
   .change{ font-family:var(--mono); font-weight:700; font-size:13px; padding:2px 7px; border-radius:6px; }
   .change.pos{ color:var(--green); background:rgba(52,211,153,0.12); }
@@ -1596,6 +1606,15 @@ window.addEventListener('error', function(e){
     const score = computeScore(pool, sec);
     const watched = isWatched(pool.network, pool.address);
 
+    if(!state.lastPrices) state.lastPrices = {};
+    const priceKey = pool.network + ':' + pool.address;
+    const prevPrice = state.lastPrices[priceKey];
+    let priceFlashCls = '';
+    if(prevPrice !== undefined && prevPrice !== pool.priceUsd){
+      priceFlashCls = pool.priceUsd > prevPrice ? 'price-flash-up' : 'price-flash-down';
+    }
+    state.lastPrices[priceKey] = pool.priceUsd;
+
     let secTags = '';
     if(sec){
       secTags += sec.mintable
@@ -1622,7 +1641,7 @@ window.addEventListener('error', function(e){
             '<div class="row-main-top">' +
               '<div class="pair">' + escapeHTML(pool.base) + ' <span class="quote">/ ' + escapeHTML(pool.quote) + '</span></div>' +
               '<div class="row-top-right">' +
-                '<div class="price">$' + formatPrice(pool.priceUsd) + '</div>' +
+                '<div class="price ' + priceFlashCls + '">$' + formatPrice(pool.priceUsd) + '</div>' +
                 '<button class="star-btn' + (watched ? ' active' : '') + '" data-star-network="' + escapeHTML(pool.network) + '" data-star-address="' + escapeHTML(pool.address) + '" data-star-base="' + escapeHTML(pool.baseAddress) + '" data-star-base-label="' + escapeHTML(pool.base) + '" data-star-quote="' + escapeHTML(pool.quote) + '">' + (watched ? '★' : '☆') + '</button>' +
               '</div>' +
             '</div>' +
