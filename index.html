@@ -183,11 +183,11 @@
   .price{ font-family:var(--mono); font-size:13.5px; color:var(--text-muted); flex:0 0 auto; border-radius:4px; }
   @keyframes priceFlashUp{
     0%{ background:rgba(52,211,153,0.35); color:var(--green); }
-    100%{ background:transparent; color:var(--text-muted); }
+    100%{ background:transparent; color:inherit; }
   }
   @keyframes priceFlashDown{
     0%{ background:rgba(251,113,133,0.35); color:var(--red); }
-    100%{ background:transparent; color:var(--text-muted); }
+    100%{ background:transparent; color:inherit; }
   }
   .price-flash-up{ animation:priceFlashUp 1.2s ease-out; }
   .price-flash-down{ animation:priceFlashDown 1.2s ease-out; }
@@ -867,8 +867,11 @@ window.addEventListener('error', function(e){
 
   function formatPrice(n){
     if(!isFinite(n) || n === 0) return '0';
-    if(n < 0.000001) return n.toExponential(2);
-    if(n < 1) return n.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
+    if(n < 1){
+      const leadingZeros = Math.max(0, Math.ceil(-Math.log10(n)) - 1);
+      const decimals = Math.min(20, leadingZeros + 5);
+      return n.toFixed(decimals).replace(/0+$/, '').replace(/\.$/, '');
+    }
     return n.toFixed(4);
   }
 
@@ -1579,6 +1582,17 @@ window.addEventListener('error', function(e){
     const totalTx1h = (bpH1.buys || 0) + (bpH1.sells || 0);
     const buyPct1h = totalTx1h ? Math.round((bpH1.buys || 0) / totalTx1h * 100) : 50;
 
+    const mcapValue = pool.marketCap !== null ? pool.marketCap : pool.fdv;
+    let priceFlash = '', mcapFlash = '';
+    if(state.lastModalPrice !== undefined && state.lastModalPrice !== pool.priceUsd){
+      priceFlash = pool.priceUsd > state.lastModalPrice ? 'price-flash-up' : 'price-flash-down';
+    }
+    if(state.lastModalMcap !== undefined && mcapValue !== null && state.lastModalMcap !== mcapValue){
+      mcapFlash = mcapValue > state.lastModalMcap ? 'price-flash-up' : 'price-flash-down';
+    }
+    state.lastModalPrice = pool.priceUsd;
+    state.lastModalMcap = mcapValue;
+
     function group(title, items){
       return (
         '<div class="td-group">' +
@@ -1605,10 +1619,10 @@ window.addEventListener('error', function(e){
           '<button class="star-btn td-star' + (isWatched(pool.network, pool.address) ? ' active' : '') + '" data-star-network="' + escapeHTML(pool.network) + '" data-star-address="' + escapeHTML(pool.address) + '" data-star-base="' + escapeHTML(pool.baseAddress) + '" data-star-base-label="' + escapeHTML(pool.base) + '" data-star-quote="' + escapeHTML(pool.quote) + '">' + (isWatched(pool.network, pool.address) ? '★ Watchlist' : '☆ Watchlist') + '</button>' +
         '</div>' +
         '<div class="token-detail-hero">' +
-          '<div class="td-hero-mcap">' + (pool.marketCap !== null ? formatUSD(pool.marketCap) : (pool.fdv !== null ? formatUSD(pool.fdv) : '—')) + '</div>' +
+          '<div class="td-hero-mcap ' + mcapFlash + '">' + (pool.marketCap !== null ? formatUSD(pool.marketCap) : (pool.fdv !== null ? formatUSD(pool.fdv) : '—')) + '</div>' +
           '<div class="td-hero-mcap-label">Capitalisation boursière</div>' +
           '<div class="td-hero-price-row">' +
-            '<span class="td-hero-price">$' + formatPrice(pool.priceUsd) + '</span>' +
+            '<span class="td-hero-price ' + priceFlash + '">$' + formatPrice(pool.priceUsd) + '</span>' +
             '<span class="change ' + changeCls + '" style="font-size:12.5px;">' + changeSign + pool.change24h.toFixed(1) + '%</span>' +
             (pool.priceNative !== null ? '<span class="td-hero-native">≈ ' + formatPrice(pool.priceNative) + ' ' + escapeHTML(pool.quote) + '</span>' : '') +
           '</div>' +
@@ -2358,6 +2372,8 @@ window.addEventListener('error', function(e){
   }
 
   function openChartModal(pool, pairLabel){
+    state.lastModalPrice = undefined;
+    state.lastModalMcap = undefined;
     state.chartModalOpen = true;
     els.chartModalScroll.scrollTop = 0;
     const network = pool.network, address = pool.address;
@@ -2377,18 +2393,41 @@ window.addEventListener('error', function(e){
     renderPositionBadge(pool);
     clearInterval(state._chartPriceInterval);
     clearInterval(state._chartTradesInterval);
+    clearInterval(state._chartFullInterval);
 
     state._chartPriceInterval = setInterval(function(){
       fetchSinglePoolFast(network, address).then(function(fresh){
-        if(!fresh) return;
-        state.currentModalPool = fresh;
-        renderPositionBadge(fresh);
-        const secKey = fresh.baseAddress ? network + ':' + fresh.baseAddress.toLowerCase() : '';
+        if(!fresh || !state.currentModalPool) return;
+        // Price-only merge: keep liquidity/volume/FDV/tx-counts from the last full
+        // GeckoTerminal snapshot so every number shown together stays internally consistent.
+        state.currentModalPool.priceUsd = fresh.priceUsd;
+        state.currentModalPool.priceNative = fresh.priceNative;
+        state.currentModalPool.change24h = fresh.change24h;
+        state.currentModalPool.change1h = fresh.change1h;
+        state.currentModalPool.change6h = fresh.change6h;
+        state.currentModalPool.change5m = fresh.change5m;
+        const merged = state.currentModalPool;
+        renderPositionBadge(merged);
+        const secKey = merged.baseAddress ? network + ':' + merged.baseAddress.toLowerCase() : '';
         const freshSec = secKey ? state.securityCache[secKey] : null;
         const wrap = document.getElementById('token-detail-wrap');
-        if(wrap) wrap.innerHTML = tokenDetailHTML(fresh, freshSec);
+        if(wrap) wrap.innerHTML = tokenDetailHTML(merged, freshSec);
       });
     }, 1500);
+
+    state._chartFullInterval = setInterval(function(){
+      fetchSinglePool(network, address).then(function(full){
+        if(!full || !state.currentModalPool) return;
+        // Full, single-source refresh for the slower-moving structural fields.
+        full.priceUsd = state.currentModalPool.priceUsd;
+        full.priceNative = state.currentModalPool.priceNative;
+        full.change24h = state.currentModalPool.change24h;
+        full.change1h = state.currentModalPool.change1h;
+        full.change6h = state.currentModalPool.change6h;
+        full.change5m = state.currentModalPool.change5m;
+        state.currentModalPool = full;
+      });
+    }, 8000);
 
     state._chartTradesInterval = setInterval(function(){
       fetchTrades(network, address).then(function(trades){
@@ -2403,6 +2442,7 @@ window.addEventListener('error', function(e){
     clearTimeout(state._chartLoadTimeout);
     clearInterval(state._chartPriceInterval);
     clearInterval(state._chartTradesInterval);
+    clearInterval(state._chartFullInterval);
     if(state.tab === 'watchlist') refreshWatchlist(true);
     else if(state.tab === 'paper') refreshPaper(true);
     else refresh(state.tab, true);
@@ -2513,20 +2553,14 @@ window.addEventListener('error', function(e){
     pools.forEach(function(p){
       const fresh = freshByAddress[(p.address || '').toLowerCase()];
       if(!fresh) return;
+      // Price-only merge: liquidity/volume/FDV/market cap/tx counts stay on GeckoTerminal
+      // exclusively so every number shown together comes from one consistent methodology.
       p.priceUsd = fresh.priceUsd;
       p.priceNative = fresh.priceNative;
-      p.liquidity = fresh.liquidity;
-      p.volume24h = fresh.volume24h;
-      p.volume1h = fresh.volume1h;
-      p.volume6h = fresh.volume6h;
-      p.fdv = fresh.fdv;
-      p.marketCap = fresh.marketCap;
       p.change24h = fresh.change24h;
       p.change1h = fresh.change1h;
       p.change6h = fresh.change6h;
       p.change5m = fresh.change5m;
-      p.txH1 = fresh.txH1;
-      p.txH24 = fresh.txH24;
       touched = true;
     });
     return touched;
