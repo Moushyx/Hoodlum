@@ -361,6 +361,13 @@
   .rug-verdict-ok{ background:rgba(52,211,153,0.12); color:var(--green); }
   .rug-verdict-unknown{ background:var(--surface); color:var(--text-muted); }
   .rug-disclaimer{ margin-top:10px; font-size:10.5px; color:var(--text-muted); line-height:1.5; }
+  .bubblemaps-link{
+    display:block; text-align:center; margin-top:12px;
+    padding:11px; border-radius:10px;
+    background:var(--surface-2); border:1px solid rgba(168,85,247,0.4);
+    color:var(--purple); text-decoration:none;
+    font-family:var(--display); font-weight:700; font-size:12.5px;
+  }
   .position-monitor{
     padding:12px 16px;
     background-image:linear-gradient(rgba(168,85,247,0.10), rgba(168,85,247,0.10));
@@ -1691,9 +1698,20 @@ window.addEventListener('error', function(e){
     return '<div class="rug-badge ' + cls + '">' + label + '</div>';
   }
 
+  function bubblemapsUrl(network, address){
+    if(!address) return null;
+    // Solana : URL stable et documentée officiellement par Bubblemaps.
+    if(network === 'solana') return 'https://app.bubblemaps.io/sol/token/' + address;
+    // Robinhood Chain : support ajouté en beta sur Bubblemaps V2 (juillet 2026) — URL déduite
+    // par cohérence avec leur convention habituelle, moins garantie tant que c'est en beta.
+    if(network === 'robinhood') return 'https://v2.bubblemaps.io/robinhood/token/' + address;
+    return null;
+  }
+
   function rugSignalsHTML(pool, sec, network){
     const analysis = computeRugSignals(pool, sec, network);
     const dotCls = { bad: 'on-low', warn: 'on-mid', ok: 'on-high', unknown: 'on-unknown' };
+    const bmUrl = bubblemapsUrl(network, pool.baseAddress);
     return (
       '<div class="rug-panel">' +
         '<div class="td-group-title">Analyse anti-rug</div>' +
@@ -1706,7 +1724,8 @@ window.addEventListener('error', function(e){
             '</div>';
           }).join('') +
         '</div>' +
-        '<div class="rug-disclaimer">Vérification de motifs connus, pas une prédiction. Un rug bien préparé peut cocher toutes ces cases — ceci réduit le risque évident, ne l\'annule pas. Pas un conseil financier.</div>' +
+        (bmUrl ? '<a class="bubblemaps-link" href="' + bmUrl + '" target="_blank" rel="noopener">🔗 Voir les clusters de wallets sur Bubblemaps ↗</a>' : '') +
+        '<div class="rug-disclaimer">Vérification de motifs connus, pas une prédiction. Un rug bien préparé peut cocher toutes ces cases — ceci réduit le risque évident, ne l\'annule pas. Le % de concentration ci-dessus ne détecte pas les wallets liés entre eux (financés depuis une même source) — c\'est ce que Bubblemaps visualise, à checker en plus si le token te semble limite. Pas un conseil financier.</div>' +
       '</div>'
     );
   }
@@ -2202,6 +2221,7 @@ window.addEventListener('error', function(e){
             '<div class="td-item"><span class="td-label">Score à l\'achat</span><span class="td-value">' + scoreTxt + '</span></div>' +
           '</div>' +
           '<div class="sell-row">' +
+            '<button class="paper-buy-btn" data-chart-network="' + escapeHTML(pos.network) + '" data-chart-address="' + escapeHTML(pos.address) + '">📈 Graphique</button>' +
             '<button class="paper-buy-btn" data-sell-id="' + escapeHTML(pos.id) + '" data-sell-price="' + (current || '') + '" data-sell-pct="0.25">Vendre 25%</button>' +
             '<button class="paper-buy-btn" data-sell-id="' + escapeHTML(pos.id) + '" data-sell-price="' + (current || '') + '" data-sell-pct="0.5">Vendre 50%</button>' +
             '<button class="paper-buy-btn" data-sell-id="' + escapeHTML(pos.id) + '" data-sell-price="' + (current || '') + '" data-sell-pct="1">Tout vendre</button>' +
@@ -2232,6 +2252,9 @@ window.addEventListener('error', function(e){
             '<div class="td-item"><span class="td-label">Prix de sortie</span><span class="td-value">$' + formatPrice(h.exitPrice) + '</span></div>' +
             '<div class="td-item"><span class="td-label">Variation</span><span class="td-value">' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%</span></div>' +
             '<div class="td-item"><span class="td-label">Clôturé</span><span class="td-value">' + formatAge(new Date(h.closedAt)) + '</span></div>' +
+          '</div>' +
+          '<div class="sell-row">' +
+            '<button class="paper-buy-btn" data-chart-network="' + escapeHTML(h.network) + '" data-chart-address="' + escapeHTML(h.address) + '">📈 Revoir le graphique</button>' +
           '</div>' +
         '</div>'
       );
@@ -2640,7 +2663,49 @@ window.addEventListener('error', function(e){
     else if(state.tab === 'paper') refreshPaper(true);
     else refresh(state.tab, true);
   }
+  function openTokenModal(pool){
+    const sec = pool && pool.baseAddress ? state.securityCache[pool.network + ':' + pool.baseAddress.toLowerCase()] : null;
+    const score = pool ? computeScore(pool, sec) : { total: null, parts: {} };
+    state.currentModalPool = pool || null;
+    updatePaperBuyPanel();
+    els.scorePanel.innerHTML =
+      rugSignalsHTML(pool, sec, pool.network) +
+      '<div class="score-panel-text">' +
+        '<span class="score-panel-total">' + (score.total === null ? '—' : score.total + '/100') + '</span>' +
+        '<span class="score-panel-caption">score de confiance</span>' +
+        '<button class="score-toggle" id="score-toggle-btn">Voir le détail ▾</button>' +
+      '</div>' + scoreBarHTML(score.parts) + scoreDetailHTML(pool, sec, score.parts);
+    const toggleBtn = document.getElementById('score-toggle-btn');
+    const detailBody = document.getElementById('score-detail-body');
+    if(toggleBtn && detailBody){
+      toggleBtn.addEventListener('click', function(){
+        const isOpen = detailBody.classList.toggle('open');
+        toggleBtn.textContent = isOpen ? 'Masquer le détail ▲' : 'Voir le détail ▾';
+      });
+    }
+    document.getElementById('token-detail-wrap').innerHTML = tokenDetailHTML(pool, sec);
+    openChartModal(pool, pool.base + ' / ' + pool.quote);
+  }
+
+  function openChartFromPaper(network, address){
+    showToast('Chargement du graphique…');
+    fetchSinglePool(network, address).then(function(pool){
+      if(!pool){
+        showToast('Token introuvable — le pool a peut-être disparu ou n\'est plus indexé');
+        return;
+      }
+      enrichPools(network, [pool]).then(function(){ openTokenModal(pool); });
+    }).catch(function(){
+      showToast('Erreur réseau, réessaie');
+    });
+  }
+
   els.list.addEventListener('click', function(e){
+    const chartBtn = e.target.closest('[data-chart-network]');
+    if(chartBtn){
+      openChartFromPaper(chartBtn.dataset.chartNetwork, chartBtn.dataset.chartAddress);
+      return;
+    }
     const simStripBtn = e.target.closest('#sim-strip-goto');
     if(simStripBtn){
       state.tab = 'paper';
@@ -2678,27 +2743,7 @@ window.addEventListener('error', function(e){
     if(!address) return;
     const pool = (state.tab === 'watchlist' ? state.watchlistPools : state.pools[state.tab]).find(function(p){ return p.address === address && p.network === row.dataset.network; });
     if(!pool) return;
-    const sec = pool && pool.baseAddress ? state.securityCache[pool.network + ':' + pool.baseAddress.toLowerCase()] : null;
-    const score = pool ? computeScore(pool, sec) : { total: null, parts: {} };
-    state.currentModalPool = pool || null;
-    updatePaperBuyPanel();
-    els.scorePanel.innerHTML =
-      rugSignalsHTML(pool, sec, pool.network) +
-      '<div class="score-panel-text">' +
-        '<span class="score-panel-total">' + (score.total === null ? '—' : score.total + '/100') + '</span>' +
-        '<span class="score-panel-caption">score de confiance</span>' +
-        '<button class="score-toggle" id="score-toggle-btn">Voir le détail ▾</button>' +
-      '</div>' + scoreBarHTML(score.parts) + scoreDetailHTML(pool, sec, score.parts);
-    const toggleBtn = document.getElementById('score-toggle-btn');
-    const detailBody = document.getElementById('score-detail-body');
-    if(toggleBtn && detailBody){
-      toggleBtn.addEventListener('click', function(){
-        const isOpen = detailBody.classList.toggle('open');
-        toggleBtn.textContent = isOpen ? 'Masquer le détail ▲' : 'Voir le détail ▾';
-      });
-    }
-    document.getElementById('token-detail-wrap').innerHTML = tokenDetailHTML(pool, sec);
-    openChartModal(pool, row.dataset.pair);
+    openTokenModal(pool);
   });
   els.chartModalClose.addEventListener('click', closeChartModal);
   document.getElementById('tf-row').addEventListener('click', function(e){
