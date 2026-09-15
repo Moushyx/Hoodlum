@@ -218,6 +218,24 @@
   .tag.platform{ color:var(--cyan); border-color:rgba(34,211,238,0.4); }
   .tag.network{ color:var(--purple); border-color:rgba(168,85,247,0.4); }
   .score-bar{ display:flex; gap:4px; width:100%; margin-top:8px; }
+  .rug-badge{
+    display:flex; align-items:center; gap:6px;
+    margin-top:9px; padding:7px 10px; border-radius:10px;
+    font-size:12px; font-weight:700; font-family:var(--mono);
+  }
+  .rug-badge.rug-badge-ok{ background:rgba(52,211,153,0.12); color:var(--green); }
+  .rug-badge.rug-badge-warn{ background:rgba(251,191,36,0.12); color:var(--yellow); }
+  .rug-badge.rug-badge-bad{ background:rgba(251,113,133,0.14); color:var(--red); }
+  .rug-badge.rug-badge-unknown{ background:var(--surface-2); color:var(--text-muted); }
+  .sim-strip{
+    display:flex; align-items:center; gap:9px;
+    background:var(--gradient-warm); color:#0A0A10;
+    padding:13px 15px; border-radius:14px; margin-bottom:10px;
+    font-family:var(--display); font-weight:700; font-size:13.5px;
+    cursor:pointer;
+  }
+  .sim-strip-pnl{ margin-left:auto; font-family:var(--mono); font-weight:800; }
+  .sim-strip-arrow{ font-size:15px; opacity:0.7; }
   .score-seg{ flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; min-width:0; }
   .score-seg-label{
     font-size:7.5px; color:var(--text-muted); font-family:var(--mono);
@@ -336,7 +354,7 @@
     font-size:12px; color:var(--text-muted); line-height:1.5;
   }
   .score-summary strong{ color:var(--text); }
-  .rug-panel{ margin-top:16px; padding-top:14px; border-top:1px solid var(--border); }
+  .rug-panel{ margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid var(--border); }
   .rug-verdict{ font-weight:700; font-size:13px; padding:10px 12px; border-radius:10px; margin-bottom:10px; }
   .rug-verdict-bad{ background:rgba(251,113,133,0.12); color:var(--red); }
   .rug-verdict-warn{ background:rgba(251,191,36,0.12); color:var(--yellow); }
@@ -475,6 +493,7 @@
   }
   .paper-toast.show{ opacity:1; }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 </head>
 <body>
 <div class="app">
@@ -483,6 +502,7 @@
   <div class="topbar">
     <div class="brand"><span class="dot"></span><h1>Hoodlum</h1></div>
     <div class="topbar-actions">
+      <button class="icon-btn" id="account-btn" title="Compte">👤</button>
       <button class="icon-btn" id="alert-btn" title="Alertes">🔔<span class="badge-count" id="alert-count" style="display:none;">•</span></button>
       <button class="icon-btn" id="filter-btn" title="Filtres">☰<span class="badge-count" id="filter-count" style="display:none;">0</span></button>
       <button class="icon-btn" id="refresh-btn" title="Actualiser">⟳</button>
@@ -706,6 +726,15 @@
   </div>
 </div>
 
+<div class="sheet" id="account-sheet">
+  <div class="sheet-handle"></div>
+  <h2>Compte</h2>
+  <div id="account-sheet-body"></div>
+  <div class="sheet-actions">
+    <button class="btn ghost" id="account-close">Fermer</button>
+  </div>
+</div>
+
 <div class="chart-modal" id="chart-modal">
   <div class="chart-modal-header">
     <div class="chart-modal-title" id="chart-modal-title">Graphique</div>
@@ -773,6 +802,16 @@ window.addEventListener('error', function(e){
   const REFRESH_MS = 12000;
   const PALETTE = ['#A855F7', '#22D3EE', '#F472B6', '#34D399', '#FBBF24', '#818CF8'];
 
+  // --- Compte & synchronisation cloud (Supabase) ---
+  // Colle ici l'URL du projet et la clé "anon public" depuis Settings > API sur supabase.com.
+  const SUPABASE_URL = 'COLLE_TON_PROJECT_URL_ICI';
+  const SUPABASE_ANON_KEY = 'COLLE_TA_CLE_ANON_ICI';
+  let supa = null;
+  if(SUPABASE_URL.indexOf('COLLE_') === -1 && SUPABASE_ANON_KEY.indexOf('COLLE_') === -1 && window.supabase){
+    try{ supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+    catch(err){ console.warn('Hoodlum: Supabase non initialisé', err); }
+  }
+
   function loadJSON(key, fallback){
     try{
       const raw = localStorage.getItem(key);
@@ -808,7 +847,9 @@ window.addEventListener('error', function(e){
     paperLoading: false,
     currentModalPool: null,
     chartModalOpen: false,
-    chartTimeframe: '1s'
+    chartTimeframe: '1s',
+    user: null,
+    syncedHistoryCount: 0
   };
 
   const els = {
@@ -1251,6 +1292,88 @@ window.addEventListener('error', function(e){
     setTimeout(function(){ els.paperToast.classList.remove('show'); }, 2200);
   }
 
+  function paperToRows(userId){
+    return {
+      account: { user_id: userId, cash: state.paper.cash, realized_pnl: state.paper.realizedPnl },
+      positions: state.paper.positions.map(function(p){
+        return {
+          id: p.id, user_id: userId, network: p.network, address: p.address, base_address: p.baseAddress,
+          base: p.base, quote: p.quote, dex_id: p.dexId || null,
+          entry_price: p.entryPrice, entry_score: (p.entryScore !== undefined ? p.entryScore : null),
+          entry_rug_bad: (p.entryRugBad !== undefined ? p.entryRugBad : null),
+          usd_spent: p.usdSpent, token_qty: p.tokenQty, opened_at: p.openedAt
+        };
+      })
+    };
+  }
+
+  async function syncPaperToCloud(){
+    if(!supa || !state.user) return;
+    try{
+      const userId = state.user.id;
+      const rows = paperToRows(userId);
+      await supa.from('paper_accounts').upsert(rows.account);
+      await supa.from('paper_positions').delete().eq('user_id', userId);
+      if(rows.positions.length > 0) await supa.from('paper_positions').insert(rows.positions);
+      const totalHistory = (state.paper.history || []).length;
+      if(totalHistory > state.syncedHistoryCount){
+        const newOnes = state.paper.history.slice(0, totalHistory - state.syncedHistoryCount);
+        const historyRows = newOnes.map(function(h){
+          return {
+            user_id: userId, network: h.network, address: h.address, base: h.base, quote: h.quote,
+            entry_price: h.entryPrice, exit_price: h.exitPrice, pnl: h.pnl,
+            entry_score: (h.entryScore !== undefined ? h.entryScore : null),
+            entry_rug_bad: (h.entryRugBad !== undefined ? h.entryRugBad : null),
+            cost_basis: h.costBasis || null, closed_at: h.closedAt
+          };
+        });
+        await supa.from('paper_history').insert(historyRows);
+        state.syncedHistoryCount = totalHistory;
+      }
+    }catch(err){
+      console.warn('Hoodlum: synchronisation cloud impossible', err);
+    }
+  }
+
+  async function loadPaperFromCloud(){
+    if(!supa || !state.user) return;
+    try{
+      const userId = state.user.id;
+      const results = await Promise.all([
+        supa.from('paper_accounts').select('*').eq('user_id', userId).maybeSingle(),
+        supa.from('paper_positions').select('*').eq('user_id', userId),
+        supa.from('paper_history').select('*').eq('user_id', userId).order('closed_at', { ascending: false }).limit(50)
+      ]);
+      const acc = results[0].data;
+      const positions = (results[1].data || []).map(function(r){
+        return {
+          id: r.id, network: r.network, address: r.address, baseAddress: r.base_address,
+          base: r.base, quote: r.quote, dexId: r.dex_id,
+          entryPrice: parseFloat(r.entry_price), entryScore: r.entry_score, entryRugBad: r.entry_rug_bad,
+          usdSpent: parseFloat(r.usd_spent), tokenQty: parseFloat(r.token_qty), openedAt: r.opened_at
+        };
+      });
+      const history = (results[2].data || []).map(function(r){
+        return {
+          network: r.network, address: r.address, base: r.base, quote: r.quote,
+          entryPrice: parseFloat(r.entry_price), exitPrice: parseFloat(r.exit_price), pnl: parseFloat(r.pnl),
+          entryScore: r.entry_score, entryRugBad: r.entry_rug_bad, costBasis: (r.cost_basis != null ? parseFloat(r.cost_basis) : null), closedAt: r.closed_at
+        };
+      });
+      if(acc){
+        state.paper = { cash: parseFloat(acc.cash), realizedPnl: parseFloat(acc.realized_pnl), positions: positions, history: history };
+        state.syncedHistoryCount = history.length;
+      } else {
+        // Premier login : on pousse la simulation actuelle (invité) comme point de départ du compte.
+        state.syncedHistoryCount = 0;
+        await syncPaperToCloud();
+      }
+      if(state.tab === 'paper') renderPaperTab();
+    }catch(err){
+      console.warn('Hoodlum: chargement cloud impossible', err);
+    }
+  }
+
   function paperBuy(pool, pct){
     if(!pool || !pool.priceUsd){
       showToast('Prix indisponible, achat annulé');
@@ -1264,6 +1387,7 @@ window.addEventListener('error', function(e){
     const secKey = pool.baseAddress ? pool.network + ':' + pool.baseAddress.toLowerCase() : '';
     const sec = secKey ? state.securityCache[secKey] : null;
     const entryScore = computeScore(pool, sec).total;
+    const entryRugBad = computeRugSignals(pool, sec, pool.network).badCount;
     state.paper.cash = Math.round((state.paper.cash - usdAmount) * 100) / 100;
     state.paper.positions.push({
       id: pool.network + ':' + pool.address + ':' + Date.now(),
@@ -1275,11 +1399,13 @@ window.addEventListener('error', function(e){
       dexId: pool.dexId,
       entryPrice: pool.priceUsd,
       entryScore: entryScore,
+      entryRugBad: entryRugBad,
       usdSpent: usdAmount,
       tokenQty: usdAmount / pool.priceUsd,
       openedAt: Date.now()
     });
     saveJSON('hoodlum_paper', state.paper);
+    syncPaperToCloud();
     showToast('✓ Acheté ' + formatUSD(usdAmount) + ' de ' + pool.base + ' — solde ' + formatUSD(state.paper.cash));
     updatePaperBuyPanel();
     renderPositionBadge(pool);
@@ -1300,7 +1426,9 @@ window.addEventListener('error', function(e){
     state.paper.history.unshift({
       network: pos.network, address: pos.address, base: pos.base, quote: pos.quote,
       entryPrice: pos.entryPrice, exitPrice: price, pnl: realized, closedAt: Date.now(),
-      entryScore: pos.entryScore !== undefined ? pos.entryScore : null, costBasis: costBasis
+      entryScore: pos.entryScore !== undefined ? pos.entryScore : null,
+      entryRugBad: pos.entryRugBad !== undefined ? pos.entryRugBad : null,
+      costBasis: costBasis
     });
     state.paper.history = state.paper.history.slice(0, 50);
     if(pct >= 0.999){
@@ -1310,6 +1438,7 @@ window.addEventListener('error', function(e){
       pos.usdSpent -= costBasis;
     }
     saveJSON('hoodlum_paper', state.paper);
+    syncPaperToCloud();
     const sign = realized >= 0 ? '+' : '';
     showToast('✓ Vendu ' + formatUSD(proceeds) + ' (' + sign + formatUSD(realized) + ')');
     if(state.tab === 'paper') refreshPaper(false);
@@ -1539,6 +1668,29 @@ window.addEventListener('error', function(e){
     );
   }
 
+  function rugBadgeHTML(pool, sec, network){
+    const analysis = computeRugSignals(pool, sec, network);
+    const known = analysis.signals.filter(function(s){ return s.status !== 'unknown'; }).length;
+    let label, cls;
+    if(known === 0){
+      label = '? Anti-rug : pas encore assez de données';
+      cls = 'rug-badge-unknown';
+    } else if(analysis.badCount >= 3){
+      label = '🚩 ' + analysis.badCount + ' signaux de rug détectés';
+      cls = 'rug-badge-bad';
+    } else if(analysis.badCount >= 1){
+      label = '⚠️ ' + analysis.badCount + ' signal(aux) de rug';
+      cls = 'rug-badge-bad';
+    } else if(analysis.verdictCls === 'warn'){
+      label = '△ Quelques points à surveiller';
+      cls = 'rug-badge-warn';
+    } else {
+      label = '✓ Aucun signal de rug (' + known + ' critères vérifiés)';
+      cls = 'rug-badge-ok';
+    }
+    return '<div class="rug-badge ' + cls + '">' + label + '</div>';
+  }
+
   function rugSignalsHTML(pool, sec, network){
     const analysis = computeRugSignals(pool, sec, network);
     const dotCls = { bad: 'on-low', warn: 'on-mid', ok: 'on-high', unknown: 'on-unknown' };
@@ -1587,7 +1739,6 @@ window.addEventListener('error', function(e){
           '</div>';
         }).join('') +
         '<div class="score-summary"><strong>' + known.length + '/5 critères connus</strong>, ' + positive + ' en zone favorable — ' + verdict + '. Indicatif seulement, pas un conseil d\'achat.</div>' +
-        rugSignalsHTML(pool, sec, pool.network) +
       '</div>'
     );
   }
@@ -1702,6 +1853,26 @@ window.addEventListener('error', function(e){
     }).join('') + '</div>';
   }
 
+  function paperSummaryStripHTML(){
+    const untouched = state.paper.positions.length === 0 && state.paper.cash === 1000 && state.paper.realizedPnl === 0 && (!state.paper.history || state.paper.history.length === 0);
+    if(untouched){
+      return '<div class="sim-strip" id="sim-strip-goto"><span>💰</span><span>Teste tes achats sans risque avec la Simulation</span><span class="sim-strip-arrow">→</span></div>';
+    }
+    let positionsValue = 0, unrealizedPnl = 0;
+    state.paper.positions.forEach(function(pos){
+      const current = pos._currentPrice || null;
+      const value = current ? pos.tokenQty * current : pos.usdSpent;
+      positionsValue += value;
+      unrealizedPnl += (value - pos.usdSpent);
+    });
+    const totalValue = state.paper.cash + positionsValue;
+    const totalPnl = unrealizedPnl + state.paper.realizedPnl;
+    const sign = totalPnl >= 0 ? '+' : '';
+    return '<div class="sim-strip" id="sim-strip-goto"><span>💰</span><span>Simulation : ' + formatUSD(totalValue) + '</span>' +
+      '<span class="sim-strip-pnl">' + sign + formatUSD(totalPnl) + '</span>' +
+      '<span class="sim-strip-arrow">→</span></div>';
+  }
+
   function rowHTML(pool, isNew){
     const risk = riskBadge(pool.liquidity);
     const bp = buyPressure(pool.txH1);
@@ -1760,6 +1931,7 @@ window.addEventListener('error', function(e){
             '</div>' +
           '</div>' +
         '</div>' +
+        rugBadgeHTML(pool, sec, pool.network) +
         '<div class="row-tags">' +
           '<span class="tag network">' + escapeHTML(NETWORKS[pool.network] ? NETWORKS[pool.network].label : pool.network) + '</span>' +
           '<span class="tag platform">' + escapeHTML(formatPlatform(pool.dexId)) + '</span>' +
@@ -1851,12 +2023,13 @@ window.addEventListener('error', function(e){
     }
 
     const pools = state.pools[tab];
+    const simStrip = paperSummaryStripHTML();
 
     if(state.loading && !pools){
-      els.list.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
+      els.list.innerHTML = simStrip + '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
       return;
     }
-    if(!pools){ els.list.innerHTML = ''; return; }
+    if(!pools){ els.list.innerHTML = simStrip; return; }
 
     const f = state.filters;
     let filtered = pools.filter(function(p){
@@ -1906,14 +2079,14 @@ window.addEventListener('error', function(e){
 
     if(filtered.length === 0){
       if(pools.length === 0){
-        els.list.innerHTML = '<div class="empty">L\'API a renvoyé 0 paire pour ' + escapeHTML(NETWORKS[state.network].label) + ' sur cet onglet en ce moment. Pas un bug — soit c\'est calme, soit l\'indexation est encore partielle.</div>' + pagerHTML(tab);
+        els.list.innerHTML = simStrip + '<div class="empty">L\'API a renvoyé 0 paire pour ' + escapeHTML(NETWORKS[state.network].label) + ' sur cet onglet en ce moment. Pas un bug — soit c\'est calme, soit l\'indexation est encore partielle.</div>' + pagerHTML(tab);
       } else {
-        els.list.innerHTML = '<div class="empty">' + pools.length + ' paires reçues, mais aucune ne passe tes filtres actuels. Ouvre les filtres pour les assouplir.</div>' + pagerHTML(tab);
+        els.list.innerHTML = simStrip + '<div class="empty">' + pools.length + ' paires reçues, mais aucune ne passe tes filtres actuels. Ouvre les filtres pour les assouplir.</div>' + pagerHTML(tab);
       }
       return;
     }
 
-    els.list.innerHTML = filtered.map(function(p){ return rowHTML(p, !!p._isNew); }).join('') + pagerHTML(tab);
+    els.list.innerHTML = simStrip + filtered.map(function(p){ return rowHTML(p, !!p._isNew); }).join('') + pagerHTML(tab);
   }
 
   function renderWatchlist(){
@@ -2079,6 +2252,7 @@ window.addEventListener('error', function(e){
     if(resetBtn) resetBtn.addEventListener('click', function(){
       state.paper = { cash: 1000, positions: [], realizedPnl: 0, history: [] };
       saveJSON('hoodlum_paper', state.paper);
+    syncPaperToCloud();
       render();
     });
   }
@@ -2467,6 +2641,13 @@ window.addEventListener('error', function(e){
     else refresh(state.tab, true);
   }
   els.list.addEventListener('click', function(e){
+    const simStripBtn = e.target.closest('#sim-strip-goto');
+    if(simStripBtn){
+      state.tab = 'paper';
+      render();
+      refreshPaper(false);
+      return;
+    }
     const pagerBtn = e.target.closest('.pager-btn');
     if(pagerBtn){
       if(pagerBtn.disabled) return;
@@ -2502,6 +2683,7 @@ window.addEventListener('error', function(e){
     state.currentModalPool = pool || null;
     updatePaperBuyPanel();
     els.scorePanel.innerHTML =
+      rugSignalsHTML(pool, sec, pool.network) +
       '<div class="score-panel-text">' +
         '<span class="score-panel-total">' + (score.total === null ? '—' : score.total + '/100') + '</span>' +
         '<span class="score-panel-caption">score de confiance</span>' +
@@ -2710,6 +2892,84 @@ window.addEventListener('error', function(e){
       startY = null;
       pulling = false;
     }, { passive: true });
+  })();
+
+  (function setupAccount(){
+    const accountBtn = document.getElementById('account-btn');
+    const sheet = document.getElementById('account-sheet');
+    const closeBtn = document.getElementById('account-close');
+
+    function openSheet(){
+      renderAccountSheet();
+      els.backdrop.classList.add('open');
+      sheet.classList.add('open');
+    }
+    function closeSheet(){
+      els.backdrop.classList.remove('open');
+      sheet.classList.remove('open');
+    }
+    accountBtn.addEventListener('click', openSheet);
+    closeBtn.addEventListener('click', closeSheet);
+    els.backdrop.addEventListener('click', closeSheet);
+
+    function updateAccountIcon(){
+      accountBtn.textContent = state.user ? '🟢' : '👤';
+    }
+
+    function renderAccountSheet(){
+      const body = document.getElementById('account-sheet-body');
+      if(!supa){
+        body.innerHTML = '<p class="swap-hint">Compte pas encore configuré par le développeur — ta simulation reste sauvegardée uniquement sur cet appareil pour l\'instant.</p>';
+        return;
+      }
+      if(state.user){
+        body.innerHTML =
+          '<p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">Connecté : <strong style="color:var(--text);">' + escapeHTML(state.user.email || '') + '</strong></p>' +
+          '<p class="swap-hint" style="margin-bottom:14px;">Ta simulation est sauvegardée sur ce compte et te suit sur tous tes appareils.</p>' +
+          '<button class="btn ghost" style="width:100%;" id="account-logout-btn">Se déconnecter</button>';
+        const logoutBtn = document.getElementById('account-logout-btn');
+        if(logoutBtn) logoutBtn.addEventListener('click', function(){ supa.auth.signOut(); closeSheet(); });
+      } else {
+        body.innerHTML =
+          '<div class="field"><label>Email</label><input type="email" id="account-email-input" placeholder="toi@exemple.com" autocomplete="email"></div>' +
+          '<button class="btn primary" style="width:100%;" id="account-send-link-btn">Envoyer le lien de connexion</button>' +
+          '<p class="swap-hint" style="margin-top:10px;">Pas de mot de passe — tu reçois un lien par email, tu cliques dessus depuis ce même appareil, et ta simulation actuelle est sauvegardée sur ce compte.</p>';
+        const sendBtn = document.getElementById('account-send-link-btn');
+        if(sendBtn) sendBtn.addEventListener('click', function(){
+          const input = document.getElementById('account-email-input');
+          const email = input ? input.value.trim() : '';
+          if(!email) return;
+          sendBtn.disabled = true;
+          sendBtn.textContent = 'Envoi…';
+          supa.auth.signInWithOtp({ email: email }).then(function(res){
+            if(res.error){
+              showToast('Erreur : ' + res.error.message);
+              sendBtn.disabled = false;
+              sendBtn.textContent = 'Envoyer le lien de connexion';
+            } else {
+              body.innerHTML = '<p class="swap-hint">Lien envoyé à ' + escapeHTML(email) + ' — vérifie tes emails et ouvre le lien depuis cet appareil.</p>';
+            }
+          });
+        });
+      }
+    }
+
+    if(supa){
+      supa.auth.getSession().then(function(res){
+        const session = res && res.data && res.data.session;
+        if(session){
+          state.user = session.user;
+          updateAccountIcon();
+          loadPaperFromCloud();
+        }
+      });
+      supa.auth.onAuthStateChange(function(event, session){
+        state.user = session ? session.user : null;
+        updateAccountIcon();
+        if(sheet.classList.contains('open')) renderAccountSheet();
+        if(state.user) loadPaperFromCloud();
+      });
+    }
   })();
 
   refreshAlertBadge();
