@@ -217,7 +217,6 @@
   .tag.bp{ color:var(--text); background:var(--surface-2); border-color:transparent; }
   .tag.platform{ color:var(--cyan); border-color:rgba(34,211,238,0.4); }
   .tag.network{ color:var(--purple); border-color:rgba(168,85,247,0.4); }
-  .score-bar{ display:flex; gap:4px; width:100%; margin-top:8px; }
   .rug-badge{
     display:flex; align-items:center; gap:6px;
     margin-top:9px; padding:7px 10px; border-radius:10px;
@@ -236,16 +235,6 @@
   }
   .sim-strip-pnl{ margin-left:auto; font-family:var(--mono); font-weight:800; }
   .sim-strip-arrow{ font-size:15px; opacity:0.7; }
-  .score-seg{ flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; min-width:0; }
-  .score-seg-label{
-    font-size:7.5px; color:var(--text-muted); font-family:var(--mono);
-    text-transform:uppercase; letter-spacing:0.02em; white-space:nowrap;
-    overflow:hidden; text-overflow:ellipsis; max-width:100%;
-  }
-  .score-seg-fill{ width:100%; height:5px; border-radius:3px; background:rgba(255,255,255,0.08); }
-  .score-seg-fill.on-high{ background:var(--green); }
-  .score-seg-fill.on-mid{ background:var(--yellow); }
-  .score-seg-fill.on-low{ background:var(--red); }
   .tag.sec-ok{ color:var(--green); border-color:rgba(52,211,153,0.5); }
   .tag.sec-bad{ color:var(--red); border-color:rgba(251,113,133,0.5); background:rgba(251,113,133,0.08); }
 
@@ -334,7 +323,6 @@
   .score-panel{
     padding:8px 16px; background:var(--surface-solid); border-bottom:1px solid var(--border);
   }
-  .score-panel-text{ display:flex; align-items:baseline; gap:8px; }
   .score-panel-total{ font-size:17px; font-weight:800; font-family:var(--mono); }
   .score-panel-caption{ font-size:11px; color:var(--text-muted); }
   .score-toggle{
@@ -363,6 +351,10 @@
   .score-summary strong{ color:var(--text); }
   .rug-panel{ margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid var(--border); }
   .rug-verdict{ font-weight:700; font-size:13px; padding:10px 12px; border-radius:10px; margin-bottom:10px; }
+  .rug-score-badge{
+    display:inline-block; margin-right:8px; padding:2px 8px; border-radius:8px;
+    background:rgba(255,255,255,0.14); font-family:var(--mono); font-weight:800; font-size:12px;
+  }
   .rug-verdict-bad{ background:rgba(251,113,133,0.12); color:var(--red); }
   .rug-verdict-warn{ background:rgba(251,191,36,0.12); color:var(--yellow); }
   .rug-verdict-ok{ background:rgba(52,211,153,0.12); color:var(--green); }
@@ -392,7 +384,6 @@
   .onboard-dots{ display:flex; gap:6px; justify-content:center; margin-top:16px; }
   .onboard-dot{ width:6px; height:6px; border-radius:50%; background:var(--border); }
   .onboard-dot.active{ background:var(--purple); }
-  .score-panel .score-bar{ margin-top:6px; }
   .chart-modal-footer{ background:var(--surface-solid); border-top:1px solid var(--border); padding-bottom:2px; }
   .gt-link{
     display:block; text-align:center; padding:8px; font-size:11px;
@@ -455,9 +446,6 @@
     display:inline-block; margin-left:4px; padding:1px 5px; border-radius:5px;
     background:rgba(251,191,36,0.15); color:var(--yellow); font-size:9px; font-weight:800; vertical-align:middle;
   }
-  .session-high-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:6px; font-size:11px; color:var(--text-muted); font-family:var(--mono); }
-  .session-high-bar{ flex:1; height:4px; border-radius:2px; background:rgba(255,255,255,0.08); overflow:hidden; }
-  .session-high-fill{ height:100%; background:var(--gradient); }
   .tf-chip{ min-width:0; overflow:hidden; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 6px; text-align:center; }
   .tf-chip-label{ font-size:9.5px; color:var(--text-muted); font-family:var(--mono); }
   .buysell-bar{ display:flex; height:8px; border-radius:4px; overflow:hidden; margin-bottom:6px; }
@@ -778,6 +766,7 @@
       <div class="position-badge" id="position-badge" style="display:none;"></div>
       <iframe id="chart-modal-iframe" src="" title="Graphique du token" scrolling="no" sandbox="allow-scripts allow-same-origin allow-forms" allow="clipboard-write"></iframe>
     </div>
+    <div id="token-detail-below-wrap"></div>
     <div id="position-monitor-wrap"></div>
     <div id="trades-feed-wrap"></div>
   </div>
@@ -1740,70 +1729,45 @@ window.addEventListener('error', function(e){
     return '<div class="check-row">' + pills + '</div>';
   }
 
+  function securityDetailRowsHTML(pool, sec, score, network){
+    const dotCls = { bad: 'on-low', warn: 'on-mid', ok: 'on-high', unknown: 'on-unknown' };
+    const tierOf = function(v){ return v === null ? 'unknown' : (v >= 70 ? 'ok' : v >= 40 ? 'warn' : 'bad'); };
+    const bp = buyPressure(pool.txH1);
+    const analysis = computeRugSignals(pool, sec, network);
+    const extraRows = [
+      { label: 'Pression d\'achat (1h)', status: tierOf(score.parts.buy), detail: bp !== null ? bp + '% achats' : 'Inconnu' },
+      { label: 'Holders', status: tierOf(score.parts.holders), detail: (sec && sec.holderCount !== null) ? sec.holderCount + ' détenteurs' : 'Inconnu' }
+    ];
+    return analysis.signals.concat(extraRows).map(function(s){
+      return '<div class="score-detail-row">' +
+        '<span class="sd-label"><span class="sd-dot ' + dotCls[s.status] + '"></span>' + escapeHTML(s.label) + '</span>' +
+        '<span class="sd-value" style="font-size:11px;font-weight:600;">' + escapeHTML(s.detail) + '</span>' +
+      '</div>';
+    }).join('');
+  }
+
   function rugSignalsHTML(pool, sec, network){
     const analysis = computeRugSignals(pool, sec, network);
-    const dotCls = { bad: 'on-low', warn: 'on-mid', ok: 'on-high', unknown: 'on-unknown' };
+    const score = computeScore(pool, sec);
+    const scoreBadge = score.total === null ? '—/100' : score.total + '/100';
     return (
       '<div class="rug-panel">' +
-        '<div class="td-group-title">Analyse anti-rug</div>' +
-        '<div class="rug-verdict rug-verdict-' + analysis.verdictCls + '">' + escapeHTML(analysis.verdict) + '</div>' +
+        '<div class="td-group-title">Analyse de sécurité</div>' +
+        '<div class="rug-verdict rug-verdict-' + analysis.verdictCls + '"><span class="rug-score-badge">' + scoreBadge + '</span>' + escapeHTML(analysis.verdict) + '</div>' +
         checkPillsHTML(pool, sec, network) +
-        '<button class="score-toggle" id="rug-toggle-btn" style="margin-top:10px;">Voir les ' + analysis.signals.length + ' critères vérifiés ▾</button>' +
+        '<button class="score-toggle" id="rug-toggle-btn" style="margin-top:10px;">Voir le détail complet ▾</button>' +
         '<div class="score-detail" id="rug-detail-body">' +
-          '<div class="rug-list">' +
-            analysis.signals.map(function(s){
-              return '<div class="score-detail-row">' +
-                '<span class="sd-label"><span class="sd-dot ' + dotCls[s.status] + '"></span>' + escapeHTML(s.label) + '</span>' +
-                '<span class="sd-value" style="font-size:11px;font-weight:600;">' + escapeHTML(s.detail) + '</span>' +
-              '</div>';
-            }).join('') +
-          '</div>' +
+          '<div class="score-radar-wrap">' + radarSVG(score.parts) + '</div>' +
+          securityDetailRowsHTML(pool, sec, score, network) +
           '<div class="rug-disclaimer">Vérification de motifs connus, pas une prédiction. Un rug bien préparé peut cocher toutes ces cases — ceci réduit le risque évident, ne l\'annule pas. Le % de concentration ne détecte pas les wallets liés entre eux (financés depuis une même source) — touche "Clusters" ci-dessus pour vérifier ça sur Bubblemaps. Surveille aussi les ventes marquées <span class="dev-tag">DEV</span> dans l\'activité récente. Pas un conseil financier.</div>' +
         '</div>' +
       '</div>'
     );
   }
 
-  function scoreDetailHTML(pool, sec, parts){
-    const bp = buyPressure(pool.txH1);
-    const tierOf = function(v){ return v === null ? 'on-unknown' : (v >= 70 ? 'on-high' : v >= 40 ? 'on-mid' : 'on-low'); };
-    const rows = [
-      { label: 'Liquidité', value: formatUSD(pool.liquidity), tier: parts.liq },
-      { label: 'Mint', value: sec ? (sec.mintable ? 'Actif' : 'Désactivé') : 'Inconnu', tier: parts.mint },
-      { label: 'LP verrouillée', value: (sec && sec.lpLockedPct !== null) ? sec.lpLockedPct + '%' : 'Inconnu', tier: parts.lp },
-      { label: 'Pression d\'achat (1h)', value: bp !== null ? bp + '%' : 'Inconnu', tier: parts.buy },
-      { label: 'Holders', value: (sec && sec.holderCount !== null) ? sec.holderCount : 'Inconnu', tier: parts.holders }
-    ];
-    const known = rows.filter(function(r){ return r.tier !== null; });
-    const positive = known.filter(function(r){ return r.tier >= 70; }).length;
-    let verdict = 'pas assez de données pour se prononcer';
-    if(known.length > 0){
-      if(positive === known.length) verdict = 'tous les critères connus sont dans la zone favorable';
-      else if(positive === 0) verdict = 'aucun critère connu n\'est dans la zone favorable — prudence';
-      else verdict = 'profil mitigé — regarde en détail avant de te décider';
-    }
-    return (
-      '<div class="score-detail" id="score-detail-body">' +
-        '<div class="score-radar-wrap">' + radarSVG(parts) + '</div>' +
-        rows.map(function(r){
-          return '<div class="score-detail-row">' +
-            '<span class="sd-label"><span class="sd-dot ' + tierOf(r.tier) + '"></span>' + escapeHTML(r.label) + '</span>' +
-            '<span class="sd-value">' + escapeHTML(String(r.value)) + '</span>' +
-          '</div>';
-        }).join('') +
-        '<div class="score-summary"><strong>' + known.length + '/5 critères connus</strong>, ' + positive + ' en zone favorable — ' + verdict + '. Indicatif seulement, pas un conseil d\'achat.</div>' +
-      '</div>'
-    );
-  }
-
-  function tokenDetailHTML(pool, sec){
-    const bpH1 = pool.txH1 || { buys: 0, sells: 0 };
-    const bpH24 = pool.txH24 || { buys: 0, sells: 0 };
+  function tokenDetailTopHTML(pool, sec){
     const changeCls = pool.change24h >= 0 ? 'pos' : 'neg';
     const changeSign = pool.change24h >= 0 ? '+' : '';
-    const totalTx1h = (bpH1.buys || 0) + (bpH1.sells || 0);
-    const buyPct1h = totalTx1h ? Math.round((bpH1.buys || 0) / totalTx1h * 100) : 50;
-
     const mcapValue = pool.marketCap !== null ? pool.marketCap : pool.fdv;
     let priceFlash = '', mcapFlash = '';
     if(state.lastModalPrice !== undefined && state.lastModalPrice !== pool.priceUsd){
@@ -1814,6 +1778,42 @@ window.addEventListener('error', function(e){
     }
     state.lastModalPrice = pool.priceUsd;
     state.lastModalMcap = mcapValue;
+
+    function tfChip(label, value){
+      const cls = value >= 0 ? 'pos' : 'neg';
+      const sign = value >= 0 ? '+' : '';
+      return '<div class="tf-chip"><span class="tf-chip-label">' + label + '</span><span class="change ' + cls + '" style="display:inline-block;margin-top:3px;">' + sign + value.toFixed(1) + '%</span></div>';
+    }
+
+    return (
+      '<div class="token-detail">' +
+        '<div class="token-detail-hero">' +
+          '<div class="td-hero-mcap ' + mcapFlash + '">' + (pool.marketCap !== null ? formatUSD(pool.marketCap) : (pool.fdv !== null ? formatUSD(pool.fdv) : '—')) + '</div>' +
+          '<div class="td-hero-mcap-label">Capitalisation boursière</div>' +
+          '<div class="td-hero-price-row">' +
+            '<span class="td-hero-price ' + priceFlash + '">$' + formatPrice(pool.priceUsd) + '</span>' +
+            '<span class="change ' + changeCls + '" style="font-size:12.5px;">' + changeSign + pool.change24h.toFixed(1) + '%</span>' +
+            (pool.priceNative !== null ? '<span class="td-hero-native">≈ ' + formatPrice(pool.priceNative) + ' ' + escapeHTML(pool.quote) + '</span>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="stat-strip">' +
+          '<div class="stat-cell"><span class="stat-label">Prix</span><span class="stat-value">$' + formatPrice(pool.priceUsd) + '</span></div>' +
+          '<div class="stat-cell"><span class="stat-label">Liquidité</span><span class="stat-value">' + formatUSD(pool.liquidity) + '</span></div>' +
+          '<div class="stat-cell"><span class="stat-label">Taxes</span><span class="stat-value">' + ((sec && sec.buyTax !== null && sec.sellTax !== null) ? sec.buyTax + '/' + sec.sellTax + '%' : '—') + '</span></div>' +
+          '<div class="stat-cell"><span class="stat-label">Top 10</span><span class="stat-value ' + ((sec && sec.topHolderPct !== null) ? (sec.topHolderPct > 30 ? 'neg' : 'pos') : '') + '">' + ((sec && sec.topHolderPct !== null) ? sec.topHolderPct + '%' : '—') + '</span></div>' +
+        '</div>' +
+        '<div class="tf-strip">' +
+          tfChip('5M', pool.change5m) + tfChip('1H', pool.change1h) + tfChip('6H', pool.change6h) +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function tokenDetailBelowHTML(pool, sec){
+    const bpH1 = pool.txH1 || { buys: 0, sells: 0 };
+    const bpH24 = pool.txH24 || { buys: 0, sells: 0 };
+    const totalTx1h = (bpH1.buys || 0) + (bpH1.sells || 0);
+    const buyPct1h = totalTx1h ? Math.round((bpH1.buys || 0) / totalTx1h * 100) : 50;
 
     function group(title, items){
       return (
@@ -1828,57 +1828,26 @@ window.addEventListener('error', function(e){
       );
     }
 
-    function tfChip(label, value){
-      const cls = value >= 0 ? 'pos' : 'neg';
-      const sign = value >= 0 ? '+' : '';
-      return '<div class="tf-chip"><span class="tf-chip-label">' + label + '</span><span class="change ' + cls + '" style="display:inline-block;margin-top:3px;">' + sign + value.toFixed(1) + '%</span></div>';
-    }
-
-    if(!state.sessionHigh) state.sessionHigh = {};
-    const highKey = pool.network + ':' + pool.address;
-    if(mcapValue !== null && (!state.sessionHigh[highKey] || mcapValue > state.sessionHigh[highKey])){
-      state.sessionHigh[highKey] = mcapValue;
-    }
-    const sessionHigh = state.sessionHigh[highKey] || mcapValue;
-    const pctOfHigh = (sessionHigh && mcapValue !== null) ? Math.max(2, Math.min(100, (mcapValue / sessionHigh) * 100)) : 100;
-
     return (
       '<div class="token-detail">' +
-        '<div class="token-detail-hero">' +
-          '<div class="td-hero-mcap ' + mcapFlash + '">' + (pool.marketCap !== null ? formatUSD(pool.marketCap) : (pool.fdv !== null ? formatUSD(pool.fdv) : '—')) + '</div>' +
-          '<div class="td-hero-mcap-label">Capitalisation boursière</div>' +
-          '<div class="td-hero-price-row">' +
-            '<span class="td-hero-price ' + priceFlash + '">$' + formatPrice(pool.priceUsd) + '</span>' +
-            '<span class="change ' + changeCls + '" style="font-size:12.5px;">' + changeSign + pool.change24h.toFixed(1) + '%</span>' +
-            (pool.priceNative !== null ? '<span class="td-hero-native">≈ ' + formatPrice(pool.priceNative) + ' ' + escapeHTML(pool.quote) + '</span>' : '') +
+        '<button class="score-toggle" id="detail-toggle-btn">Plus de détails sur le marché ▾</button>' +
+        '<div class="score-detail" id="detail-toggle-body">' +
+          '<div class="td-group">' +
+            '<div class="td-group-title">Activité (1h)</div>' +
+            '<div class="buysell-bar"><span class="bs-buy" style="width:' + buyPct1h + '%;"></span><span class="bs-sell" style="width:' + (100 - buyPct1h) + '%;"></span></div>' +
+            '<div class="buysell-labels"><span class="pos">' + (bpH1.buys || 0) + ' achats</span><span class="neg">' + (bpH1.sells || 0) + ' ventes</span></div>' +
+            '<div class="token-detail-grid" style="margin-top:10px;">' +
+              '<div class="td-item"><span class="td-label">Achats (24h)</span><span class="td-value">' + (bpH24.buys || 0) + '</span></div>' +
+              '<div class="td-item"><span class="td-label">Ventes (24h)</span><span class="td-value">' + (bpH24.sells || 0) + '</span></div>' +
+            '</div>' +
           '</div>' +
-          (mcapValue !== null ? '<div class="session-high-row"><span>Plus haut vu (session) ' + formatUSD(sessionHigh) + '</span></div><div class="session-high-bar"><div class="session-high-fill" style="width:' + pctOfHigh + '%;"></div></div>' : '') +
-        '</div>' +
-        '<div class="stat-strip">' +
-          '<div class="stat-cell"><span class="stat-label">Prix</span><span class="stat-value">$' + formatPrice(pool.priceUsd) + '</span></div>' +
-          '<div class="stat-cell"><span class="stat-label">Liquidité</span><span class="stat-value">' + formatUSD(pool.liquidity) + '</span></div>' +
-          '<div class="stat-cell"><span class="stat-label">Taxes</span><span class="stat-value">' + ((sec && sec.buyTax !== null && sec.sellTax !== null) ? sec.buyTax + '/' + sec.sellTax + '%' : '—') + '</span></div>' +
-          '<div class="stat-cell"><span class="stat-label">Top 10</span><span class="stat-value ' + ((sec && sec.topHolderPct !== null) ? (sec.topHolderPct > 30 ? 'neg' : 'pos') : '') + '">' + ((sec && sec.topHolderPct !== null) ? sec.topHolderPct + '%' : '—') + '</span></div>' +
-        '</div>' +
-        '<div class="tf-strip">' +
-          tfChip('5M', pool.change5m) + tfChip('1H', pool.change1h) + tfChip('6H', pool.change6h) + tfChip('24H', pool.change24h) +
-        '</div>' +
-        group('Marché', [
-          { label: 'Liquidité', value: formatUSD(pool.liquidity) },
-          { label: 'Volume 1h', value: formatUSD(pool.volume1h) },
-          { label: 'Volume 24h', value: formatUSD(pool.volume24h) },
-          { label: 'FDV', value: pool.fdv !== null ? formatUSD(pool.fdv) : 'Inconnu' },
-          { label: 'Âge', value: formatAge(pool.createdAt) },
-          { label: 'Plateforme', value: formatPlatform(pool.dexId) }
-        ]) +
-        '<div class="td-group">' +
-          '<div class="td-group-title">Activité (1h)</div>' +
-          '<div class="buysell-bar"><span class="bs-buy" style="width:' + buyPct1h + '%;"></span><span class="bs-sell" style="width:' + (100 - buyPct1h) + '%;"></span></div>' +
-          '<div class="buysell-labels"><span class="pos">' + (bpH1.buys || 0) + ' achats</span><span class="neg">' + (bpH1.sells || 0) + ' ventes</span></div>' +
-          '<div class="token-detail-grid" style="margin-top:10px;">' +
-            '<div class="td-item"><span class="td-label">Achats (24h)</span><span class="td-value">' + (bpH24.buys || 0) + '</span></div>' +
-            '<div class="td-item"><span class="td-label">Ventes (24h)</span><span class="td-value">' + (bpH24.sells || 0) + '</span></div>' +
-          '</div>' +
+          group('Marché', [
+            { label: 'Volume 1h', value: formatUSD(pool.volume1h) },
+            { label: 'Volume 24h', value: formatUSD(pool.volume24h) },
+            { label: 'FDV', value: pool.fdv !== null ? formatUSD(pool.fdv) : 'Inconnu' },
+            { label: 'Âge', value: formatAge(pool.createdAt) },
+            { label: 'Plateforme', value: formatPlatform(pool.dexId) }
+          ]) +
         '</div>' +
       '</div>'
     );
@@ -1893,21 +1862,6 @@ window.addEventListener('error', function(e){
         '<button class="btn ghost pager-btn" data-page-dir="1"' + (page >= 10 ? ' disabled' : '') + '>Suivant →</button>' +
       '</div>'
     );
-  }
-
-  function scoreBarHTML(parts){
-    const order = [
-      { key: 'liq', label: 'Liq' },
-      { key: 'mint', label: 'Mint' },
-      { key: 'lp', label: 'LP' },
-      { key: 'buy', label: 'Ach' },
-      { key: 'holders', label: 'Hold' }
-    ];
-    return '<div class="score-bar">' + order.map(function(ax){
-      const v = parts[ax.key];
-      const cls = v === null ? '' : (v >= 70 ? 'on-high' : v >= 40 ? 'on-mid' : 'on-low');
-      return '<div class="score-seg"><span class="score-seg-label">' + ax.label + '</span><span class="score-seg-fill ' + cls + '"></span></div>';
-    }).join('') + '</div>';
   }
 
   function paperSummaryStripHTML(){
@@ -2650,7 +2604,7 @@ window.addEventListener('error', function(e){
         const secKey = merged.baseAddress ? network + ':' + merged.baseAddress.toLowerCase() : '';
         const freshSec = secKey ? state.securityCache[secKey] : null;
         const wrap = document.getElementById('token-detail-wrap');
-        if(wrap) wrap.innerHTML = tokenDetailHTML(merged, freshSec);
+        if(wrap) wrap.innerHTML = tokenDetailTopHTML(merged, freshSec);
       });
     }, 500);
 
@@ -2665,6 +2619,18 @@ window.addEventListener('error', function(e){
         full.change6h = state.currentModalPool.change6h;
         full.change5m = state.currentModalPool.change5m;
         state.currentModalPool = full;
+        const secKey = full.baseAddress ? network + ':' + full.baseAddress.toLowerCase() : '';
+        const freshSec = secKey ? state.securityCache[secKey] : null;
+        const belowWrap = document.getElementById('token-detail-below-wrap');
+        if(belowWrap){
+          const wasOpen = !!document.getElementById('detail-toggle-body') && document.getElementById('detail-toggle-body').classList.contains('open');
+          belowWrap.innerHTML = tokenDetailBelowHTML(full, freshSec);
+          if(wasOpen){
+            document.getElementById('detail-toggle-body').classList.add('open');
+            document.getElementById('detail-toggle-btn').textContent = 'Masquer ▲';
+          }
+          wireToggle('detail-toggle-btn', 'detail-toggle-body', 'Masquer ▲', 'Plus de détails sur le marché ▾');
+        }
       });
     }, 8000);
 
@@ -2698,20 +2664,13 @@ window.addEventListener('error', function(e){
 
   function openTokenModal(pool){
     const sec = pool && pool.baseAddress ? state.securityCache[pool.network + ':' + pool.baseAddress.toLowerCase()] : null;
-    const score = pool ? computeScore(pool, sec) : { total: null, parts: {} };
-    const rugCount = computeRugSignals(pool, sec, pool.network).signals.length;
     state.currentModalPool = pool || null;
     updatePaperBuyPanel();
-    els.scorePanel.innerHTML =
-      rugSignalsHTML(pool, sec, pool.network) +
-      '<div class="score-panel-text">' +
-        '<span class="score-panel-total">' + (score.total === null ? '—' : score.total + '/100') + '</span>' +
-        '<span class="score-panel-caption">score de confiance</span>' +
-        '<button class="score-toggle" id="score-toggle-btn">Voir le détail ▾</button>' +
-      '</div>' + scoreBarHTML(score.parts) + scoreDetailHTML(pool, sec, score.parts);
-    wireToggle('score-toggle-btn', 'score-detail-body', 'Masquer le détail ▲', 'Voir le détail ▾');
-    wireToggle('rug-toggle-btn', 'rug-detail-body', 'Masquer le détail ▲', 'Voir les ' + rugCount + ' critères vérifiés ▾');
-    document.getElementById('token-detail-wrap').innerHTML = tokenDetailHTML(pool, sec);
+    els.scorePanel.innerHTML = rugSignalsHTML(pool, sec, pool.network);
+    wireToggle('rug-toggle-btn', 'rug-detail-body', 'Masquer ▲', 'Voir le détail complet ▾');
+    document.getElementById('token-detail-wrap').innerHTML = tokenDetailTopHTML(pool, sec);
+    document.getElementById('token-detail-below-wrap').innerHTML = tokenDetailBelowHTML(pool, sec);
+    wireToggle('detail-toggle-btn', 'detail-toggle-body', 'Masquer ▲', 'Plus de détails sur le marché ▾');
     openChartModal(pool);
   }
 
