@@ -1948,8 +1948,11 @@ window.addEventListener('error', function(e){
     }
     state.lastPrices[priceKey] = pool.priceUsd;
 
-    const metaBits = ['Liq ' + formatUSD(pool.liquidity), 'Vol ' + formatUSD(pool.volume24h)];
-    if(bp !== null) metaBits.push(bp + '% achats');
+    const metaBits = ['MC ' + formatUSD(pool.marketCap !== null ? pool.marketCap : pool.fdv), 'Liq ' + formatUSD(pool.liquidity), 'Vol ' + formatUSD(pool.volume24h)];
+    if(bp !== null){
+      const totalTx = (pool.txH1.buys || 0) + (pool.txH1.sells || 0);
+      metaBits.push(bp + '% achats (' + totalTx + ')');
+    }
     metaBits.push(formatAge(pool.createdAt));
 
     return (
@@ -2649,7 +2652,7 @@ window.addEventListener('error', function(e){
         const wrap = document.getElementById('token-detail-wrap');
         if(wrap) wrap.innerHTML = tokenDetailHTML(merged, freshSec);
       });
-    }, 1000);
+    }, 500);
 
     state._chartFullInterval = setInterval(function(){
       fetchSinglePool(network, address).then(function(full){
@@ -2880,7 +2883,7 @@ window.addEventListener('error', function(e){
         render();
       }
     });
-  }, 1000);
+  }, 500);
 
   (function setupOnboarding(){
     const steps = [
