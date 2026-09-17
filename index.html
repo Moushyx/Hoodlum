@@ -309,10 +309,17 @@
   }
   .chart-modal.open{ display:flex; }
   .chart-modal-header{
-    display:flex; align-items:center; justify-content:space-between;
-    padding:14px 16px; background:var(--surface-solid); border-bottom:1px solid var(--border);
+    display:flex; align-items:center; gap:10px;
+    padding:12px 14px; background:var(--surface-solid); border-bottom:1px solid var(--border);
   }
-  .chart-modal-title{ font-weight:700; font-size:15px; }
+  .cmh-info{ display:flex; align-items:center; gap:9px; flex:1; min-width:0; }
+  .cmh-text{ flex:1; min-width:0; }
+  .cmh-name{ font-weight:700; font-size:14.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cmh-name .quote{ color:var(--text-muted); font-weight:500; }
+  .cmh-meta{ font-size:11px; color:var(--text-muted); font-family:var(--mono); margin-top:1px; }
+  .cmh-meta span{ cursor:pointer; }
+  .cmh-star{ background:none; border:none; font-size:20px; flex:0 0 auto; color:var(--text-muted); cursor:pointer; }
+  .cmh-star.active{ color:var(--yellow); }
   .chart-modal-scroll{ flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; display:flex; flex-direction:column; }
   .chart-modal-body{ flex:0 0 auto; background:#0A0A10; position:relative; }
   .chart-modal-body iframe{ width:100%; height:min(62vh, 480px); min-height:340px; border:0; touch-action:pan-y; }
@@ -361,23 +368,12 @@
   .rug-verdict-ok{ background:rgba(52,211,153,0.12); color:var(--green); }
   .rug-verdict-unknown{ background:var(--surface); color:var(--text-muted); }
   .rug-disclaimer{ margin-top:10px; font-size:10.5px; color:var(--text-muted); line-height:1.5; }
-  .bubblemaps-link{
-    display:block; text-align:center; margin-top:12px;
-    padding:11px; border-radius:10px;
-    background:var(--surface-2); border:1px solid rgba(168,85,247,0.4);
-    color:var(--purple); text-decoration:none;
-    font-family:var(--display); font-weight:700; font-size:12.5px;
-  }
   .position-monitor{
     padding:12px 16px;
     background-image:linear-gradient(rgba(168,85,247,0.10), rgba(168,85,247,0.10));
     background-color:var(--surface-solid);
     border-top:1px solid var(--border); border-bottom:1px solid var(--border);
   }
-  .trading-block{ background:var(--surface-solid); border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
-  .trading-block .position-monitor{ border-top:none; border-bottom:1px solid var(--border); }
-  .trading-block .paper-buy-row{ border-bottom:none; }
-  .trading-block .paper-buy-row:not(:last-child){ border-bottom:1px solid var(--border); }
   .onboard-backdrop{
     position:fixed; inset:0; z-index:60; background:rgba(0,0,0,0.75);
     display:none; align-items:center; justify-content:center; padding:20px;
@@ -397,12 +393,13 @@
   .onboard-dot{ width:6px; height:6px; border-radius:50%; background:var(--border); }
   .onboard-dot.active{ background:var(--purple); }
   .score-panel .score-bar{ margin-top:6px; }
-  .chart-modal-footer a{
-    display:block; text-align:center;
-    background:var(--gradient); color:#0A0A10; text-decoration:none;
-    font-size:14px; font-weight:700; padding:13px; border-radius:12px;
+  .chart-modal-footer{ background:var(--surface-solid); border-top:1px solid var(--border); padding-bottom:2px; }
+  .gt-link{
+    display:block; text-align:center; padding:8px; font-size:11px;
+    color:var(--text-muted); text-decoration:none; font-family:var(--mono);
   }
-  .paper-buy-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:12px 16px; background:var(--surface-solid); border-bottom:1px solid var(--border); }
+  .paper-buy-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:10px 16px; }
+  .paper-buy-row:not(:last-child){ border-bottom:1px solid var(--border); }
   .token-detail{
     padding:16px; background:
       radial-gradient(circle at 0% 0%, rgba(168,85,247,0.10), transparent 55%),
@@ -410,10 +407,6 @@
       var(--surface-solid);
   }
   .token-detail-hero{ margin-bottom:16px; }
-  .token-detail-hero-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
-  .td-creator{ font-size:11px; color:var(--text-muted); font-family:var(--mono); }
-  .td-star{ background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:5px 12px; font-size:11.5px; font-family:var(--display); color:var(--text-muted); }
-  .td-star.active{ color:var(--yellow); border-color:rgba(251,191,36,0.4); }
   .td-hero-mcap{ font-family:var(--mono); font-weight:800; font-size:28px; line-height:1.1; }
   .td-hero-mcap-label{ font-size:11px; color:var(--text-muted); margin-top:2px; margin-bottom:8px; }
   .td-hero-price-row{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
@@ -435,13 +428,36 @@
   }
   .td-label{ font-size:10px; color:var(--text-muted); }
   .td-value{ font-family:var(--mono); font-weight:700; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .td-address{
-    display:block; width:100%; padding:10px; text-align:center;
-    background:var(--surface); border:1px solid var(--border); border-radius:10px;
-    color:var(--text-muted); font-family:var(--mono); font-size:11.5px; cursor:pointer;
+  .view-chart-btn{
+    display:block; width:100%; padding:10px; text-align:center; margin-top:10px;
+    background:var(--surface); border:1px solid rgba(34,211,238,0.4); border-radius:10px;
+    color:var(--cyan); font-family:var(--display); font-weight:700; font-size:12.5px; cursor:pointer;
   }
-  .td-address.copied{ color:var(--green); border-color:rgba(52,211,153,0.5); }
   .tf-strip{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px; }
+  .stat-strip{ display:flex; border-top:1px solid var(--border); border-bottom:1px solid var(--border); padding:11px 0; margin:2px 0 16px; }
+  .stat-cell{ flex:1; display:flex; flex-direction:column; gap:3px; padding:0 10px; border-left:1px solid var(--border); }
+  .stat-cell:first-child{ border-left:none; padding-left:0; }
+  .stat-label{ font-size:9.5px; color:var(--text-muted); font-family:var(--mono); text-transform:uppercase; letter-spacing:0.02em; }
+  .stat-value{ font-family:var(--mono); font-weight:700; font-size:13px; }
+  .check-row{ display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; margin-top:10px; scrollbar-width:none; }
+  .check-row::-webkit-scrollbar{ display:none; }
+  .check-pill{
+    flex:0 0 auto; display:flex; align-items:center; gap:5px;
+    padding:7px 11px; border-radius:20px; font-size:11.5px; font-weight:700;
+    font-family:var(--mono); border:1px solid var(--border); text-decoration:none; white-space:nowrap;
+  }
+  .check-pill.check-ok{ color:var(--green); border-color:rgba(52,211,153,0.5); }
+  .check-pill.check-bad{ color:var(--red); border-color:rgba(251,113,133,0.5); background:rgba(251,113,133,0.08); }
+  .check-pill.check-warn{ color:var(--yellow); border-color:rgba(251,191,36,0.5); }
+  .check-pill.check-unknown{ color:var(--text-muted); }
+  .check-pill.check-link{ color:var(--purple); border-color:rgba(168,85,247,0.5); }
+  .dev-tag{
+    display:inline-block; margin-left:4px; padding:1px 5px; border-radius:5px;
+    background:rgba(251,191,36,0.15); color:var(--yellow); font-size:9px; font-weight:800; vertical-align:middle;
+  }
+  .session-high-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:6px; font-size:11px; color:var(--text-muted); font-family:var(--mono); }
+  .session-high-bar{ flex:1; height:4px; border-radius:2px; background:rgba(255,255,255,0.08); overflow:hidden; }
+  .session-high-fill{ height:100%; background:var(--gradient); }
   .tf-chip{ min-width:0; overflow:hidden; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 6px; text-align:center; }
   .tf-chip-label{ font-size:9.5px; color:var(--text-muted); font-family:var(--mono); }
   .buysell-bar{ display:flex; height:8px; border-radius:4px; overflow:hidden; margin-bottom:6px; }
@@ -744,28 +760,12 @@
 
 <div class="chart-modal" id="chart-modal">
   <div class="chart-modal-header">
-    <div class="chart-modal-title" id="chart-modal-title">Graphique</div>
-    <button class="icon-btn" id="chart-modal-close">✕</button>
+    <button class="icon-btn" id="chart-modal-close">←</button>
+    <div class="cmh-info" id="cmh-info-wrap"></div>
   </div>
   <div class="chart-modal-scroll" id="chart-modal-scroll">
     <div class="score-panel" id="score-panel"></div>
     <div id="token-detail-wrap"></div>
-    <div class="trading-block">
-      <div id="position-monitor-wrap"></div>
-      <div class="paper-buy-row" id="paper-buy-row">
-        <span class="paper-buy-label" id="paper-cash-label">Solde fictif : 1 000 $</span>
-        <button class="paper-buy-btn" data-pct="0.1">Acheter 10%</button>
-        <button class="paper-buy-btn" data-pct="0.25">Acheter 25%</button>
-        <button class="paper-buy-btn" data-pct="0.5">Acheter 50%</button>
-        <button class="paper-buy-btn" data-pct="1">Acheter tout</button>
-      </div>
-      <div class="paper-buy-row" id="paper-sell-section" style="display:none;">
-        <span class="paper-buy-label">Ta position — vendre :</span>
-        <button class="paper-buy-btn sell" data-modal-sell-pct="0.25">Vendre 25%</button>
-        <button class="paper-buy-btn sell" data-modal-sell-pct="0.5">Vendre 50%</button>
-        <button class="paper-buy-btn sell" data-modal-sell-pct="1">Tout vendre</button>
-      </div>
-    </div>
     <div class="tf-row" id="tf-row">
       <button class="tf-btn active" data-tf="1s">1s</button>
       <button class="tf-btn" data-tf="1m">1m</button>
@@ -778,10 +778,24 @@
       <div class="position-badge" id="position-badge" style="display:none;"></div>
       <iframe id="chart-modal-iframe" src="" title="Graphique du token" scrolling="no" sandbox="allow-scripts allow-same-origin allow-forms" allow="clipboard-write"></iframe>
     </div>
+    <div id="position-monitor-wrap"></div>
     <div id="trades-feed-wrap"></div>
   </div>
   <div class="chart-modal-footer">
-    <a id="chart-modal-external" href="#" target="_blank" rel="noopener">Acheter / vendre sur GeckoTerminal ↗</a>
+    <a id="chart-modal-external" href="#" target="_blank" rel="noopener" class="gt-link">Voir sur GeckoTerminal ↗</a>
+    <div class="paper-buy-row" id="paper-buy-row">
+      <span class="paper-buy-label" id="paper-cash-label">Solde fictif : 1 000 $</span>
+      <button class="paper-buy-btn" data-pct="0.1">Acheter 10%</button>
+      <button class="paper-buy-btn" data-pct="0.25">Acheter 25%</button>
+      <button class="paper-buy-btn" data-pct="0.5">Acheter 50%</button>
+      <button class="paper-buy-btn" data-pct="1">Acheter tout</button>
+    </div>
+    <div class="paper-buy-row" id="paper-sell-section" style="display:none;">
+      <span class="paper-buy-label">Ta position — vendre :</span>
+      <button class="paper-buy-btn sell" data-modal-sell-pct="0.25">Vendre 25%</button>
+      <button class="paper-buy-btn sell" data-modal-sell-pct="0.5">Vendre 50%</button>
+      <button class="paper-buy-btn sell" data-modal-sell-pct="1">Tout vendre</button>
+    </div>
   </div>
 </div>
 
@@ -886,7 +900,6 @@ window.addEventListener('error', function(e){
     fReset: document.getElementById('f-reset'),
     fApply: document.getElementById('f-apply'),
     chartModal: document.getElementById('chart-modal'),
-    chartModalTitle: document.getElementById('chart-modal-title'),
     chartModalIframe: document.getElementById('chart-modal-iframe'),
     chartModalScroll: document.getElementById('chart-modal-scroll'),
     chartModalExternal: document.getElementById('chart-modal-external'),
@@ -1708,24 +1721,45 @@ window.addEventListener('error', function(e){
     return null;
   }
 
+  function checkPillsHTML(pool, sec, network){
+    const bmUrl = bubblemapsUrl(network, pool.baseAddress);
+    function pill(label, status){
+      const icon = status === 'ok' ? '✓' : status === 'bad' ? '✗' : status === 'warn' ? '!' : '?';
+      return '<div class="check-pill check-' + status + '"><span>' + icon + '</span><span>' + escapeHTML(label) + '</span></div>';
+    }
+    const mintStatus = sec ? (sec.mintable ? 'bad' : 'ok') : 'unknown';
+    const lpStatus = (sec && sec.lpLockedPct !== null) ? (sec.lpLockedPct >= 80 ? 'ok' : 'bad') : 'unknown';
+    const topStatus = (sec && sec.topHolderPct !== null) ? (sec.topHolderPct > 50 ? 'bad' : sec.topHolderPct > 30 ? 'warn' : 'ok') : 'unknown';
+    let pills = pill('Mint', mintStatus) + pill('LP', lpStatus);
+    if(network !== 'solana'){
+      const honeypotStatus = (sec && sec.isHoneypot !== null) ? (sec.isHoneypot ? 'bad' : 'ok') : 'unknown';
+      pills += pill('Honeypot', honeypotStatus);
+    }
+    pills += pill('Top 10', topStatus);
+    if(bmUrl) pills += '<a class="check-pill check-link" href="' + bmUrl + '" target="_blank" rel="noopener"><span>🔗</span><span>Clusters</span></a>';
+    return '<div class="check-row">' + pills + '</div>';
+  }
+
   function rugSignalsHTML(pool, sec, network){
     const analysis = computeRugSignals(pool, sec, network);
     const dotCls = { bad: 'on-low', warn: 'on-mid', ok: 'on-high', unknown: 'on-unknown' };
-    const bmUrl = bubblemapsUrl(network, pool.baseAddress);
     return (
       '<div class="rug-panel">' +
         '<div class="td-group-title">Analyse anti-rug</div>' +
         '<div class="rug-verdict rug-verdict-' + analysis.verdictCls + '">' + escapeHTML(analysis.verdict) + '</div>' +
-        '<div class="rug-list">' +
-          analysis.signals.map(function(s){
-            return '<div class="score-detail-row">' +
-              '<span class="sd-label"><span class="sd-dot ' + dotCls[s.status] + '"></span>' + escapeHTML(s.label) + '</span>' +
-              '<span class="sd-value" style="font-size:11px;font-weight:600;">' + escapeHTML(s.detail) + '</span>' +
-            '</div>';
-          }).join('') +
+        checkPillsHTML(pool, sec, network) +
+        '<button class="score-toggle" id="rug-toggle-btn" style="margin-top:10px;">Voir les ' + analysis.signals.length + ' critères vérifiés ▾</button>' +
+        '<div class="score-detail" id="rug-detail-body">' +
+          '<div class="rug-list">' +
+            analysis.signals.map(function(s){
+              return '<div class="score-detail-row">' +
+                '<span class="sd-label"><span class="sd-dot ' + dotCls[s.status] + '"></span>' + escapeHTML(s.label) + '</span>' +
+                '<span class="sd-value" style="font-size:11px;font-weight:600;">' + escapeHTML(s.detail) + '</span>' +
+              '</div>';
+            }).join('') +
+          '</div>' +
+          '<div class="rug-disclaimer">Vérification de motifs connus, pas une prédiction. Un rug bien préparé peut cocher toutes ces cases — ceci réduit le risque évident, ne l\'annule pas. Le % de concentration ne détecte pas les wallets liés entre eux (financés depuis une même source) — touche "Clusters" ci-dessus pour vérifier ça sur Bubblemaps. Surveille aussi les ventes marquées <span class="dev-tag">DEV</span> dans l\'activité récente. Pas un conseil financier.</div>' +
         '</div>' +
-        (bmUrl ? '<a class="bubblemaps-link" href="' + bmUrl + '" target="_blank" rel="noopener">🔗 Voir les clusters de wallets sur Bubblemaps ↗</a>' : '') +
-        '<div class="rug-disclaimer">Vérification de motifs connus, pas une prédiction. Un rug bien préparé peut cocher toutes ces cases — ceci réduit le risque évident, ne l\'annule pas. Le % de concentration ci-dessus ne détecte pas les wallets liés entre eux (financés depuis une même source) — c\'est ce que Bubblemaps visualise, à checker en plus si le token te semble limite. Pas un conseil financier.</div>' +
       '</div>'
     );
   }
@@ -1765,7 +1799,6 @@ window.addEventListener('error', function(e){
   function tokenDetailHTML(pool, sec){
     const bpH1 = pool.txH1 || { buys: 0, sells: 0 };
     const bpH24 = pool.txH24 || { buys: 0, sells: 0 };
-    const shortAddr = pool.address ? (pool.address.slice(0, 6) + '…' + pool.address.slice(-4)) : '—';
     const changeCls = pool.change24h >= 0 ? 'pos' : 'neg';
     const changeSign = pool.change24h >= 0 ? '+' : '';
     const totalTx1h = (bpH1.buys || 0) + (bpH1.sells || 0);
@@ -1801,12 +1834,16 @@ window.addEventListener('error', function(e){
       return '<div class="tf-chip"><span class="tf-chip-label">' + label + '</span><span class="change ' + cls + '" style="display:inline-block;margin-top:3px;">' + sign + value.toFixed(1) + '%</span></div>';
     }
 
+    if(!state.sessionHigh) state.sessionHigh = {};
+    const highKey = pool.network + ':' + pool.address;
+    if(mcapValue !== null && (!state.sessionHigh[highKey] || mcapValue > state.sessionHigh[highKey])){
+      state.sessionHigh[highKey] = mcapValue;
+    }
+    const sessionHigh = state.sessionHigh[highKey] || mcapValue;
+    const pctOfHigh = (sessionHigh && mcapValue !== null) ? Math.max(2, Math.min(100, (mcapValue / sessionHigh) * 100)) : 100;
+
     return (
       '<div class="token-detail">' +
-        '<div class="token-detail-hero-top">' +
-          (sec && sec.creatorAddress ? '<span class="td-creator">Créé par ' + escapeHTML(sec.creatorAddress.slice(0, 6) + '…' + sec.creatorAddress.slice(-4)) + '</span>' : '<span></span>') +
-          '<button class="star-btn td-star' + (isWatched(pool.network, pool.address) ? ' active' : '') + '" data-star-network="' + escapeHTML(pool.network) + '" data-star-address="' + escapeHTML(pool.address) + '" data-star-base="' + escapeHTML(pool.baseAddress) + '" data-star-base-label="' + escapeHTML(pool.base) + '" data-star-quote="' + escapeHTML(pool.quote) + '">' + (isWatched(pool.network, pool.address) ? '★ Watchlist' : '☆ Watchlist') + '</button>' +
-        '</div>' +
         '<div class="token-detail-hero">' +
           '<div class="td-hero-mcap ' + mcapFlash + '">' + (pool.marketCap !== null ? formatUSD(pool.marketCap) : (pool.fdv !== null ? formatUSD(pool.fdv) : '—')) + '</div>' +
           '<div class="td-hero-mcap-label">Capitalisation boursière</div>' +
@@ -1815,6 +1852,13 @@ window.addEventListener('error', function(e){
             '<span class="change ' + changeCls + '" style="font-size:12.5px;">' + changeSign + pool.change24h.toFixed(1) + '%</span>' +
             (pool.priceNative !== null ? '<span class="td-hero-native">≈ ' + formatPrice(pool.priceNative) + ' ' + escapeHTML(pool.quote) + '</span>' : '') +
           '</div>' +
+          (mcapValue !== null ? '<div class="session-high-row"><span>Plus haut vu (session) ' + formatUSD(sessionHigh) + '</span></div><div class="session-high-bar"><div class="session-high-fill" style="width:' + pctOfHigh + '%;"></div></div>' : '') +
+        '</div>' +
+        '<div class="stat-strip">' +
+          '<div class="stat-cell"><span class="stat-label">Prix</span><span class="stat-value">$' + formatPrice(pool.priceUsd) + '</span></div>' +
+          '<div class="stat-cell"><span class="stat-label">Liquidité</span><span class="stat-value">' + formatUSD(pool.liquidity) + '</span></div>' +
+          '<div class="stat-cell"><span class="stat-label">Taxes</span><span class="stat-value">' + ((sec && sec.buyTax !== null && sec.sellTax !== null) ? sec.buyTax + '/' + sec.sellTax + '%' : '—') + '</span></div>' +
+          '<div class="stat-cell"><span class="stat-label">Top 10</span><span class="stat-value ' + ((sec && sec.topHolderPct !== null) ? (sec.topHolderPct > 30 ? 'neg' : 'pos') : '') + '">' + ((sec && sec.topHolderPct !== null) ? sec.topHolderPct + '%' : '—') + '</span></div>' +
         '</div>' +
         '<div class="tf-strip">' +
           tfChip('5M', pool.change5m) + tfChip('1H', pool.change1h) + tfChip('6H', pool.change6h) + tfChip('24H', pool.change24h) +
@@ -1824,8 +1868,8 @@ window.addEventListener('error', function(e){
           { label: 'Volume 1h', value: formatUSD(pool.volume1h) },
           { label: 'Volume 24h', value: formatUSD(pool.volume24h) },
           { label: 'FDV', value: pool.fdv !== null ? formatUSD(pool.fdv) : 'Inconnu' },
-          { label: 'Market cap', value: pool.marketCap !== null ? formatUSD(pool.marketCap) : 'Non vérifié' },
-          { label: 'Âge', value: formatAge(pool.createdAt) }
+          { label: 'Âge', value: formatAge(pool.createdAt) },
+          { label: 'Plateforme', value: formatPlatform(pool.dexId) }
         ]) +
         '<div class="td-group">' +
           '<div class="td-group-title">Activité (1h)</div>' +
@@ -1836,12 +1880,6 @@ window.addEventListener('error', function(e){
             '<div class="td-item"><span class="td-label">Ventes (24h)</span><span class="td-value">' + (bpH24.sells || 0) + '</span></div>' +
           '</div>' +
         '</div>' +
-        group('Sécurité & frais', [
-          { label: 'Plateforme', value: formatPlatform(pool.dexId) },
-          { label: 'Taxe achat', value: (sec && sec.buyTax !== null) ? sec.buyTax + '%' : 'Inconnue' },
-          { label: 'Taxe vente', value: (sec && sec.sellTax !== null) ? sec.sellTax + '%' : 'Inconnue' }
-        ]) +
-        '<button class="td-address" id="td-copy-address" data-address="' + escapeHTML(pool.address) + '">Contrat : ' + escapeHTML(shortAddr) + ' · toucher pour copier</button>' +
       '</div>'
     );
   }
@@ -1897,11 +1935,8 @@ window.addEventListener('error', function(e){
     const bp = buyPressure(pool.txH1);
     const changeCls = pool.change24h >= 0 ? 'pos' : 'neg';
     const changeSign = pool.change24h >= 0 ? '+' : '';
-    const change1hCls = pool.change1h >= 0 ? 'pos' : 'neg';
-    const change1hSign = pool.change1h >= 0 ? '+' : '';
     const secKey = pool.baseAddress ? pool.network + ':' + pool.baseAddress.toLowerCase() : '';
     const sec = secKey ? state.securityCache[secKey] : null;
-    const score = computeScore(pool, sec);
     const watched = isWatched(pool.network, pool.address);
 
     if(!state.lastPrices) state.lastPrices = {};
@@ -1913,23 +1948,9 @@ window.addEventListener('error', function(e){
     }
     state.lastPrices[priceKey] = pool.priceUsd;
 
-    let secTags = '';
-    if(sec){
-      secTags += sec.mintable
-        ? '<span class="tag sec-bad">Mint actif</span>'
-        : '<span class="tag sec-ok">Mint désactivé</span>';
-      if(sec.lpLockedPct !== null){
-        secTags += sec.lpLockedPct >= 80
-          ? '<span class="tag sec-ok">LP verrouillée ' + sec.lpLockedPct + '%</span>'
-          : '<span class="tag sec-bad">LP verrouillée ' + sec.lpLockedPct + '%</span>';
-      }
-      if(sec.blacklist){
-        secTags += '<span class="tag sec-bad">Blacklist possible</span>';
-      }
-      if(sec.holderCount !== null){
-        secTags += '<span class="tag bp">' + sec.holderCount + ' holders</span>';
-      }
-    }
+    const metaBits = ['Liq ' + formatUSD(pool.liquidity), 'Vol ' + formatUSD(pool.volume24h)];
+    if(bp !== null) metaBits.push(bp + '% achats');
+    metaBits.push(formatAge(pool.createdAt));
 
     return (
       '<div class="row risk-accent-' + risk.cls.replace('risk-', '') + (isNew ? ' just-in' : '') + '" data-pool-id="' + escapeHTML(pool.id) + '" data-network="' + escapeHTML(pool.network) + '" data-address="' + escapeHTML(pool.address) + '" data-base-address="' + escapeHTML(pool.baseAddress) + '" data-pair="' + escapeHTML(pool.base) + ' / ' + escapeHTML(pool.quote) + '">' +
@@ -1944,9 +1965,8 @@ window.addEventListener('error', function(e){
               '</div>' +
             '</div>' +
             '<div class="row-sub">' +
-              '<span class="change ' + changeCls + '">' + changeSign + pool.change24h.toFixed(1) + '% (24h)</span>' +
-              '<span class="change mini ' + change1hCls + '">' + change1hSign + pool.change1h.toFixed(1) + '% (1h)</span>' +
-              '<span class="meta">Liq ' + formatUSD(pool.liquidity) + ' · Vol ' + formatUSD(pool.volume24h) + ' · ' + formatAge(pool.createdAt) + '</span>' +
+              '<span class="change ' + changeCls + '">' + changeSign + pool.change24h.toFixed(1) + '%</span>' +
+              '<span class="meta">' + metaBits.join(' · ') + '</span>' +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -1955,10 +1975,7 @@ window.addEventListener('error', function(e){
           '<span class="tag network">' + escapeHTML(NETWORKS[pool.network] ? NETWORKS[pool.network].label : pool.network) + '</span>' +
           '<span class="tag platform">' + escapeHTML(formatPlatform(pool.dexId)) + '</span>' +
           '<span class="tag ' + risk.cls + '">' + risk.label + '</span>' +
-          (bp !== null ? '<span class="tag bp">' + bp + '% achats (1h)</span>' : '') +
-          secTags +
         '</div>' +
-        scoreBarHTML(score.parts) +
       '</div>'
     );
   }
@@ -2200,8 +2217,7 @@ window.addEventListener('error', function(e){
       const pnlPct = pos.usdSpent ? (pnl / pos.usdSpent) * 100 : 0;
       const pnlCls = pnl >= 0 ? 'pos' : 'neg';
       const pnlSign = pnl >= 0 ? '+' : '';
-      const qtyFmt = pos.tokenQty >= 1e6 ? (pos.tokenQty / 1e6).toFixed(2) + 'M' : pos.tokenQty >= 1e3 ? (pos.tokenQty / 1e3).toFixed(2) + 'k' : pos.tokenQty.toFixed(2);
-      const scoreTxt = (pos.entryScore !== undefined && pos.entryScore !== null) ? pos.entryScore + '/100' : 'Non enregistré';
+      const scoreTxt = (pos.entryScore !== undefined && pos.entryScore !== null) ? pos.entryScore + '/100' : '—';
       return (
         '<div class="row">' +
           '<div class="row-main-top">' +
@@ -2210,18 +2226,11 @@ window.addEventListener('error', function(e){
           '</div>' +
           '<div class="row-sub">' +
             '<span class="change ' + pnlCls + '">' + pnlSign + formatUSD(pnl) + ' (' + pnlSign + pnlPct.toFixed(1) + '%)</span>' +
-            '<span class="meta">' + escapeHTML(NETWORKS[pos.network].label) + (pos.dexId ? ' · ' + escapeHTML(formatPlatform(pos.dexId)) : '') + '</span>' +
+            '<span class="meta">' + escapeHTML(NETWORKS[pos.network].label) + ' · depuis ' + formatAge(new Date(pos.openedAt)) + '</span>' +
           '</div>' +
-          '<div class="token-detail-grid" style="margin-top:10px;">' +
-            '<div class="td-item"><span class="td-label">Prix d\'entrée</span><span class="td-value">$' + formatPrice(pos.entryPrice) + '</span></div>' +
-            '<div class="td-item"><span class="td-label">Prix actuel</span><span class="td-value">' + (current ? '$' + formatPrice(current) : '—') + '</span></div>' +
-            '<div class="td-item"><span class="td-label">Quantité détenue</span><span class="td-value">' + qtyFmt + '</span></div>' +
-            '<div class="td-item"><span class="td-label">Détenu depuis</span><span class="td-value">' + formatAge(new Date(pos.openedAt)) + '</span></div>' +
-            '<div class="td-item"><span class="td-label">Investi</span><span class="td-value">' + formatUSD(pos.usdSpent) + '</span></div>' +
-            '<div class="td-item"><span class="td-label">Score à l\'achat</span><span class="td-value">' + scoreTxt + '</span></div>' +
-          '</div>' +
+          '<div class="meta" style="margin-top:6px;">Entrée $' + formatPrice(pos.entryPrice) + (current ? ' → $' + formatPrice(current) : '') + ' · Investi ' + formatUSD(pos.usdSpent) + ' · Score ' + scoreTxt + '</div>' +
+          '<button class="view-chart-btn" data-chart-network="' + escapeHTML(pos.network) + '" data-chart-address="' + escapeHTML(pos.address) + '">📈 Voir le graphique du token</button>' +
           '<div class="sell-row">' +
-            '<button class="paper-buy-btn" data-chart-network="' + escapeHTML(pos.network) + '" data-chart-address="' + escapeHTML(pos.address) + '">📈 Graphique</button>' +
             '<button class="paper-buy-btn" data-sell-id="' + escapeHTML(pos.id) + '" data-sell-price="' + (current || '') + '" data-sell-pct="0.25">Vendre 25%</button>' +
             '<button class="paper-buy-btn" data-sell-id="' + escapeHTML(pos.id) + '" data-sell-price="' + (current || '') + '" data-sell-pct="0.5">Vendre 50%</button>' +
             '<button class="paper-buy-btn" data-sell-id="' + escapeHTML(pos.id) + '" data-sell-price="' + (current || '') + '" data-sell-pct="1">Tout vendre</button>' +
@@ -2247,15 +2256,8 @@ window.addEventListener('error', function(e){
             '<div class="pair">' + escapeHTML(h.base) + ' <span class="quote">/ ' + escapeHTML(h.quote) + '</span></div>' +
             '<span class="change ' + pnlCls + '">' + pnlSign + formatUSD(h.pnl) + '</span>' +
           '</div>' +
-          '<div class="token-detail-grid" style="margin-top:8px;">' +
-            '<div class="td-item"><span class="td-label">Prix d\'entrée</span><span class="td-value">$' + formatPrice(h.entryPrice) + '</span></div>' +
-            '<div class="td-item"><span class="td-label">Prix de sortie</span><span class="td-value">$' + formatPrice(h.exitPrice) + '</span></div>' +
-            '<div class="td-item"><span class="td-label">Variation</span><span class="td-value">' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%</span></div>' +
-            '<div class="td-item"><span class="td-label">Clôturé</span><span class="td-value">' + formatAge(new Date(h.closedAt)) + '</span></div>' +
-          '</div>' +
-          '<div class="sell-row">' +
-            '<button class="paper-buy-btn" data-chart-network="' + escapeHTML(h.network) + '" data-chart-address="' + escapeHTML(h.address) + '">📈 Revoir le graphique</button>' +
-          '</div>' +
+          '<div class="meta" style="margin-top:6px;">$' + formatPrice(h.entryPrice) + ' → $' + formatPrice(h.exitPrice) + ' (' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%) · clôturé ' + formatAge(new Date(h.closedAt)) + '</div>' +
+          '<button class="view-chart-btn" data-chart-network="' + escapeHTML(h.network) + '" data-chart-address="' + escapeHTML(h.address) + '">📈 Revoir le graphique</button>' +
         '</div>'
       );
     }).join('');
@@ -2539,14 +2541,19 @@ window.addEventListener('error', function(e){
     const price = priceFromTrade(a, baseAddress);
     const vol = formatUSD(parseFloat(a.volume_in_usd) || 0);
     const priceFmt = price ? '$' + formatPrice(price) : '—';
-    const trader = a.tx_from_address ? (a.tx_from_address.slice(0, 4) + '…' + a.tx_from_address.slice(-4)) : '—';
+    const traderAddr = a.tx_from_address || '';
+    const trader = traderAddr ? (traderAddr.slice(0, 4) + '…' + traderAddr.slice(-4)) : '—';
     const ts = a.block_timestamp ? formatAge(new Date(a.block_timestamp)) : '—';
+    const modalPool = state.currentModalPool;
+    const secKey = (modalPool && baseAddress) ? modalPool.network + ':' + baseAddress.toLowerCase() : '';
+    const sec = secKey ? state.securityCache[secKey] : null;
+    const isDev = !!(sec && sec.creatorAddress && traderAddr && sec.creatorAddress.toLowerCase() === traderAddr.toLowerCase());
     return (
       '<div class="trade-row' + (isNew ? ' just-in' : '') + '">' +
-        '<span class="trade-kind ' + (isBuy ? 'pos' : 'neg') + '">' + (isBuy ? 'Achat' : 'Vente') + '</span>' +
+        '<span class="trade-kind ' + (isBuy ? 'pos' : 'neg') + '">' + (isBuy ? 'Achat' : 'Vente') + (isDev ? '<span class="dev-tag">DEV</span>' : '') + '</span>' +
         '<span class="trade-vol">' + vol + '</span>' +
         '<span class="trade-amount">' + priceFmt + '</span>' +
-        '<span class="trade-trader" data-copy-trader="' + escapeHTML(a.tx_from_address || '') + '">' + escapeHTML(trader) + '</span>' +
+        '<span class="trade-trader" data-copy-trader="' + escapeHTML(traderAddr) + '">' + escapeHTML(trader) + '</span>' +
         '<span class="trade-time">' + ts + '</span>' +
       '</div>'
     );
@@ -2583,14 +2590,27 @@ window.addEventListener('error', function(e){
     }
   }
 
-  function openChartModal(pool, pairLabel){
+  function chartModalHeaderHTML(pool){
+    const shortAddr = pool.address ? (pool.address.slice(0, 4) + '…' + pool.address.slice(-4)) : '—';
+    const watched = isWatched(pool.network, pool.address);
+    return (
+      avatarHTML(pool) +
+      '<div class="cmh-text">' +
+        '<div class="cmh-name">' + escapeHTML(pool.base) + ' <span class="quote">/ ' + escapeHTML(pool.quote) + '</span></div>' +
+        '<div class="cmh-meta">' + formatAge(pool.createdAt) + ' · <span id="cmh-copy-address" data-address="' + escapeHTML(pool.address) + '">' + escapeHTML(shortAddr) + ' 📋</span></div>' +
+      '</div>' +
+      '<button class="star-btn cmh-star' + (watched ? ' active' : '') + '" data-star-network="' + escapeHTML(pool.network) + '" data-star-address="' + escapeHTML(pool.address) + '" data-star-base="' + escapeHTML(pool.baseAddress) + '" data-star-base-label="' + escapeHTML(pool.base) + '" data-star-quote="' + escapeHTML(pool.quote) + '">' + (watched ? '★' : '☆') + '</button>'
+    );
+  }
+
+  function openChartModal(pool){
     state.lastModalPrice = undefined;
     state.lastModalMcap = undefined;
     state.chartModalOpen = true;
     els.chartModalScroll.scrollTop = 0;
     const network = pool.network, address = pool.address;
     const externalUrl = 'https://www.geckoterminal.com/' + network + '/pools/' + address;
-    els.chartModalTitle.textContent = pairLabel;
+    document.getElementById('cmh-info-wrap').innerHTML = chartModalHeaderHTML(pool);
     els.chartModalExternal.href = externalUrl;
     els.chartModal.classList.add('open');
     document.querySelectorAll('.tf-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.tf === state.chartTimeframe); });
@@ -2663,9 +2683,20 @@ window.addEventListener('error', function(e){
     else if(state.tab === 'paper') refreshPaper(true);
     else refresh(state.tab, true);
   }
+  function wireToggle(btnId, bodyId, openLabel, closedLabel){
+    const btn = document.getElementById(btnId);
+    const body = document.getElementById(bodyId);
+    if(!btn || !body) return;
+    btn.addEventListener('click', function(){
+      const isOpen = body.classList.toggle('open');
+      btn.textContent = isOpen ? openLabel : closedLabel;
+    });
+  }
+
   function openTokenModal(pool){
     const sec = pool && pool.baseAddress ? state.securityCache[pool.network + ':' + pool.baseAddress.toLowerCase()] : null;
     const score = pool ? computeScore(pool, sec) : { total: null, parts: {} };
+    const rugCount = computeRugSignals(pool, sec, pool.network).signals.length;
     state.currentModalPool = pool || null;
     updatePaperBuyPanel();
     els.scorePanel.innerHTML =
@@ -2675,16 +2706,10 @@ window.addEventListener('error', function(e){
         '<span class="score-panel-caption">score de confiance</span>' +
         '<button class="score-toggle" id="score-toggle-btn">Voir le détail ▾</button>' +
       '</div>' + scoreBarHTML(score.parts) + scoreDetailHTML(pool, sec, score.parts);
-    const toggleBtn = document.getElementById('score-toggle-btn');
-    const detailBody = document.getElementById('score-detail-body');
-    if(toggleBtn && detailBody){
-      toggleBtn.addEventListener('click', function(){
-        const isOpen = detailBody.classList.toggle('open');
-        toggleBtn.textContent = isOpen ? 'Masquer le détail ▲' : 'Voir le détail ▾';
-      });
-    }
+    wireToggle('score-toggle-btn', 'score-detail-body', 'Masquer le détail ▲', 'Voir le détail ▾');
+    wireToggle('rug-toggle-btn', 'rug-detail-body', 'Masquer le détail ▲', 'Voir les ' + rugCount + ' critères vérifiés ▾');
     document.getElementById('token-detail-wrap').innerHTML = tokenDetailHTML(pool, sec);
-    openChartModal(pool, pool.base + ' / ' + pool.quote);
+    openChartModal(pool);
   }
 
   function openChartFromPaper(network, address){
@@ -2771,24 +2796,21 @@ window.addEventListener('error', function(e){
       showToast('Copie non supportée par ce navigateur');
     }
   });
-  els.tokenDetailWrap.addEventListener('click', function(e){
-    const starBtn = e.target.closest('.td-star');
+  document.getElementById('cmh-info-wrap').addEventListener('click', function(e){
+    const starBtn = e.target.closest('.cmh-star');
     if(starBtn){
       toggleWatch(starBtn.dataset.starNetwork, starBtn.dataset.starAddress, starBtn.dataset.starBase, starBtn.dataset.starBaseLabel, starBtn.dataset.starQuote);
       const nowActive = starBtn.classList.toggle('active');
-      starBtn.textContent = nowActive ? '★ Watchlist' : '☆ Watchlist';
+      starBtn.textContent = nowActive ? '★' : '☆';
       return;
     }
-    const copyBtn = e.target.closest('#td-copy-address');
+    const copyBtn = e.target.closest('#cmh-copy-address');
     if(!copyBtn) return;
     const addr = copyBtn.dataset.address;
     const done = function(){
-      copyBtn.classList.add('copied');
-      copyBtn.textContent = '✓ Adresse copiée';
-      setTimeout(function(){
-        copyBtn.classList.remove('copied');
-        copyBtn.textContent = 'Contrat : ' + addr.slice(0, 6) + '…' + addr.slice(-4) + ' · toucher pour copier';
-      }, 1800);
+      const original = copyBtn.textContent;
+      copyBtn.textContent = '✓ copié';
+      setTimeout(function(){ copyBtn.textContent = original; }, 1500);
     };
     if(navigator.clipboard && navigator.clipboard.writeText){
       navigator.clipboard.writeText(addr).then(done).catch(function(){ showToast('Copie impossible'); });
