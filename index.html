@@ -934,7 +934,12 @@ window.addEventListener('error', function(e){
   function escapeHTML(str){
     const d = document.createElement('div');
     d.textContent = str == null ? '' : String(str);
-    return d.innerHTML;
+    // The textContent→innerHTML trick escapes & < > but NOT quote characters, since quotes
+    // are only meaningful inside attribute values, not text nodes. Every call site in this
+    // app inserts escapeHTML() output into both text content AND attribute values (data-*,
+    // src=), so quotes must be neutralized here too or a stray " in token/URL data breaks
+    // out of the surrounding attribute and corrupts the DOM structure.
+    return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   function hashColor(str){
@@ -980,16 +985,24 @@ window.addEventListener('error', function(e){
   // and Meteora DBC let creators configure their own SOL target) and reading that live state needs
   // a Solana RPC or a paid indexer — not available from GeckoTerminal's free pool data. We use
   // pump.fun's known fixed ~$69k market-cap threshold as the closest available reference point,
-  // so this is meaningfully more reliable for pump.fun/PumpSwap tokens than for LaunchLab/DBC ones.
+  // so this is meaningfully more reliable for pump.fun tokens than for LaunchLab/DBC ones.
   const APPROX_GRADUATION_MCAP = 69000;
   function isBondingCurvePlatform(dexId){
     const d = (dexId || '').toLowerCase();
+    // PumpSwap is pump.fun's POST-graduation AMM (already migrated) — it must never match here
+    // even though its slug contains "pump", or already-graduated tokens of any market cap get
+    // wrongly filed as "close to graduating".
+    if(d.indexOf('pumpswap') !== -1) return false;
     return d.indexOf('pump') !== -1 || d.indexOf('launchlab') !== -1 || d.indexOf('dbc') !== -1 || d.indexOf('bonding') !== -1;
   }
   function graduationPct(pool){
     if(!isBondingCurvePlatform(pool.dexId)) return null;
     const mcap = pool.marketCap !== null ? pool.marketCap : pool.fdv;
     if(mcap === null) return null;
+    // Well past the approximate threshold means either it already graduated (and our dexId
+    // check missed that) or the estimate no longer means anything — exclude rather than show
+    // a misleading number.
+    if(mcap > APPROX_GRADUATION_MCAP * 1.5) return null;
     return Math.max(0, Math.min(100, Math.round((mcap / APPROX_GRADUATION_MCAP) * 100)));
   }
 
@@ -1560,8 +1573,11 @@ window.addEventListener('error', function(e){
     const key = pool.baseAddress ? pool.network + ':' + pool.baseAddress.toLowerCase() : '';
     const img = key ? state.imageCache[key] : null;
     if(img){
-      return '<img class="avatar" src="' + img + '" alt="" onerror="this.outerHTML=\'' +
-        avatarFallbackHTML(pool).replace(/'/g, "\\'") + '\'">';
+      const letter = escapeHTML((pool.base || '?').charAt(0).toUpperCase());
+      const color = hashColor(pool.base || pool.id || 'x');
+      return '<img class="avatar" src="' + escapeHTML(img) + '" alt="" ' +
+        'data-fallback-letter="' + letter + '" data-fallback-color="' + escapeHTML(color) + '" ' +
+        'onerror="window.hoodlumAvatarFallback(this)">';
     }
     return avatarFallbackHTML(pool);
   }
@@ -1571,6 +1587,19 @@ window.addEventListener('error', function(e){
     const color = hashColor(pool.base || pool.id || 'x');
     return '<div class="avatar-fallback" style="background:' + color + '">' + letter + '</div>';
   }
+
+  // Runs on every broken avatar image (a routine, frequent event — dead links, slow CDNs,
+  // brand-new tokens with no image yet). Built with real DOM APIs instead of HTML-string
+  // concatenation so there is no attribute quoting to get wrong, at any nesting depth.
+  window.hoodlumAvatarFallback = function(imgEl){
+    const letter = imgEl.getAttribute('data-fallback-letter') || '?';
+    const color = imgEl.getAttribute('data-fallback-color') || '#818CF8';
+    const div = document.createElement('div');
+    div.className = 'avatar-fallback';
+    div.style.background = color;
+    div.textContent = letter;
+    imgEl.replaceWith(div);
+  };
 
   function computeRugSignals(pool, sec, network){
     const signals = [];
@@ -1761,7 +1790,7 @@ window.addEventListener('error', function(e){
       pills += pill('Honeypot', honeypotStatus);
     }
     pills += pill('Top 10', topStatus);
-    if(bmUrl) pills += '<a class="check-pill check-link" href="' + bmUrl + '" target="_blank" rel="noopener"><span>🔗</span><span>Clusters</span></a>';
+    if(bmUrl) pills += '<a class="check-pill check-link" href="' + escapeHTML(bmUrl) + '" target="_blank" rel="noopener"><span>🔗</span><span>Clusters</span></a>';
     return '<div class="check-row">' + pills + '</div>';
   }
 
