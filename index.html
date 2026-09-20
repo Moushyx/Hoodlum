@@ -101,7 +101,7 @@
     font-family:var(--mono);
   }
 
-  .tabs{ display:flex; gap:8px; padding:0 16px 10px; overflow-x:auto; scrollbar-width:none; }
+  .tabs{ display:flex; gap:8px; padding:0 16px 10px; overflow-x:auto; scrollbar-width:none; touch-action:pan-x; }
   .tabs::-webkit-scrollbar{ display:none; }
   .tab{
     flex:0 0 auto; padding:10px 14px;
@@ -126,7 +126,7 @@
 
   .platform-row{
     display:flex; gap:7px; padding:0 16px 12px;
-    overflow-x:auto; scrollbar-width:none;
+    overflow-x:auto; scrollbar-width:none; touch-action:pan-x;
   }
   .platform-row::-webkit-scrollbar{display:none;}
   .chip{
@@ -240,7 +240,7 @@
   .shelf-header{ display:flex; align-items:baseline; justify-content:space-between; padding:0 2px 8px; }
   .shelf-title{ font-weight:700; font-size:15px; }
   .shelf-caption{ font-size:11px; color:var(--text-muted); font-family:var(--mono); }
-  .shelf-row{ display:flex; gap:9px; overflow-x:auto; padding:2px 2px 6px; scrollbar-width:none; }
+  .shelf-row{ display:flex; gap:9px; overflow-x:auto; padding:2px 2px 6px; scrollbar-width:none; touch-action:pan-x; }
   .shelf-row::-webkit-scrollbar{ display:none; }
   .shelf-card{
     flex:0 0 138px; background:var(--surface); border:1px solid var(--border); border-radius:14px;
@@ -258,7 +258,7 @@
   .tag.sec-bad{ color:var(--red); border-color:rgba(251,113,133,0.5); background:rgba(251,113,133,0.08); }
 
   .empty{ padding:40px 18px; text-align:center; color:var(--text-muted); font-size:13.5px; line-height:1.5; }
-  .pager{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 2px 4px; }
+  .pager{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 2px; margin-bottom:9px; }
   .pager-btn{ flex:0 0 auto; padding:9px 14px; font-size:13px; }
   .pager-btn:disabled{ opacity:0.35; }
   .pager-num{ font-family:var(--mono); font-size:12px; color:var(--text-muted); }
@@ -448,7 +448,7 @@
   .stat-cell:first-child{ border-left:none; padding-left:0; }
   .stat-label{ font-size:9.5px; color:var(--text-muted); font-family:var(--mono); text-transform:uppercase; letter-spacing:0.02em; }
   .stat-value{ font-family:var(--mono); font-weight:700; font-size:13px; }
-  .check-row{ display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; margin-top:10px; scrollbar-width:none; }
+  .check-row{ display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; margin-top:10px; scrollbar-width:none; touch-action:pan-x; }
   .check-row::-webkit-scrollbar{ display:none; }
   .check-pill{
     flex:0 0 auto; display:flex; align-items:center; gap:5px;
@@ -2172,7 +2172,7 @@ window.addEventListener('error', function(e){
       return;
     }
 
-    els.list.innerHTML = simStrip + filtered.map(function(p){ return rowHTML(p, !!p._isNew); }).join('') + pagerHTML(tab);
+    els.list.innerHTML = simStrip + pagerHTML(tab) + filtered.map(function(p){ return rowHTML(p, !!p._isNew); }).join('') + pagerHTML(tab);
   }
 
   function renderWatchlist(){
@@ -2354,7 +2354,12 @@ window.addEventListener('error', function(e){
     });
   });
 
-  els.refreshBtn.addEventListener('click', function(){ refresh(state.tab, false); });
+  els.refreshBtn.addEventListener('click', function(){
+    if(state.tab === 'watchlist') refreshWatchlist(false);
+    else if(state.tab === 'paper') refreshPaper(false);
+    else if(state.tab === 'board'){ refresh('new', false); refresh('trending', false); }
+    else refresh(state.tab, false);
+  });
 
   // filter sheet open/close
   function openSheet(){
@@ -3018,7 +3023,7 @@ window.addEventListener('error', function(e){
     let startY = null;
     let pulling = false;
     document.addEventListener('touchstart', function(e){
-      if(state.chartModalOpen || window.scrollY > 0) { startY = null; return; }
+      if(state.chartModalOpen || window.scrollY > 0 || e.target.closest('.shelf-row, .platform-row, .tabs, .check-row')) { startY = null; return; }
       startY = e.touches[0].clientY;
       pulling = false;
     }, { passive: true });
@@ -3044,6 +3049,7 @@ window.addEventListener('error', function(e){
         };
         if(state.tab === 'watchlist') refreshWatchlist(false);
         else if(state.tab === 'paper') refreshPaper(false);
+        else if(state.tab === 'board'){ refresh('new', false); refresh('trending', false); }
         else refresh(state.tab, false);
         setTimeout(done, 1000);
       } else {
