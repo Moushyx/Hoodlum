@@ -236,6 +236,24 @@
   }
   .sim-strip-pnl{ margin-left:auto; font-family:var(--mono); font-weight:800; }
   .sim-strip-arrow{ font-size:15px; opacity:0.7; }
+  .shelf{ margin-bottom:20px; }
+  .shelf-header{ display:flex; align-items:baseline; justify-content:space-between; padding:0 2px 8px; }
+  .shelf-title{ font-weight:700; font-size:15px; }
+  .shelf-caption{ font-size:11px; color:var(--text-muted); font-family:var(--mono); }
+  .shelf-row{ display:flex; gap:9px; overflow-x:auto; padding:2px 2px 6px; scrollbar-width:none; }
+  .shelf-row::-webkit-scrollbar{ display:none; }
+  .shelf-card{
+    flex:0 0 138px; background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    padding:11px; cursor:pointer;
+  }
+  .shelf-card:active{ background:var(--surface-2); }
+  .shelf-card-top{ display:flex; align-items:center; gap:7px; margin-bottom:7px; }
+  .shelf-pair{ font-weight:700; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
+  .shelf-price{ font-family:var(--mono); font-size:11px; color:var(--text-muted); }
+  .shelf-meta{ font-family:var(--mono); font-size:10px; color:var(--text-muted); margin-top:4px; }
+  .shelf-empty{ padding:14px; color:var(--text-muted); font-size:12px; text-align:center; }
+  .grad-bar{ width:100%; height:4px; border-radius:2px; background:rgba(255,255,255,0.08); margin-top:6px; overflow:hidden; }
+  .grad-bar-fill{ height:100%; background:var(--gradient-warm); }
   .tag.sec-ok{ color:var(--green); border-color:rgba(52,211,153,0.5); }
   .tag.sec-bad{ color:var(--red); border-color:rgba(251,113,133,0.5); background:rgba(251,113,133,0.08); }
 
@@ -527,6 +545,7 @@
   </div>
 
   <div class="tabs" id="tab-row">
+    <button class="tab" data-tab="board">📊 Vue d'ensemble</button>
     <button class="tab active" data-tab="trending">En tendance</button>
     <button class="tab" data-tab="new">Nouvelles paires</button>
     <button class="tab" data-tab="watchlist">★ Watchlist</button>
@@ -955,6 +974,23 @@ window.addEventListener('error', function(e){
   function ageMinutes(date){
     if(!date) return Infinity;
     return Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
+  }
+
+  // Approximation only: real graduation thresholds are set per-token on-chain (Raydium LaunchLab
+  // and Meteora DBC let creators configure their own SOL target) and reading that live state needs
+  // a Solana RPC or a paid indexer — not available from GeckoTerminal's free pool data. We use
+  // pump.fun's known fixed ~$69k market-cap threshold as the closest available reference point,
+  // so this is meaningfully more reliable for pump.fun/PumpSwap tokens than for LaunchLab/DBC ones.
+  const APPROX_GRADUATION_MCAP = 69000;
+  function isBondingCurvePlatform(dexId){
+    const d = (dexId || '').toLowerCase();
+    return d.indexOf('pump') !== -1 || d.indexOf('launchlab') !== -1 || d.indexOf('dbc') !== -1 || d.indexOf('bonding') !== -1;
+  }
+  function graduationPct(pool){
+    if(!isBondingCurvePlatform(pool.dexId)) return null;
+    const mcap = pool.marketCap !== null ? pool.marketCap : pool.fdv;
+    if(mcap === null) return null;
+    return Math.max(0, Math.min(100, Math.round((mcap / APPROX_GRADUATION_MCAP) * 100)));
   }
 
   function riskBadge(liquidity){
@@ -1493,7 +1529,7 @@ window.addEventListener('error', function(e){
     state.page = { trending: 1, new: 1 };
     state.filters.platforms.clear();
     render();
-    refresh(state.tab, false);
+    if(state.tab !== 'board') refresh(state.tab, false);
   }
 
   function getAvailablePlatforms(){
@@ -1884,6 +1920,59 @@ window.addEventListener('error', function(e){
       '<span class="sim-strip-arrow">→</span></div>';
   }
 
+  function shelfCardHTML(pool, showGradBar){
+    const changeCls = pool.change24h >= 0 ? 'pos' : 'neg';
+    const changeSign = pool.change24h >= 0 ? '+' : '';
+    const gp = showGradBar ? graduationPct(pool) : null;
+    return (
+      '<div class="shelf-card" data-network="' + escapeHTML(pool.network) + '" data-address="' + escapeHTML(pool.address) + '" data-pair="' + escapeHTML(pool.base) + ' / ' + escapeHTML(pool.quote) + '">' +
+        '<div class="shelf-card-top">' + avatarHTML(pool) + '<span class="shelf-pair">' + escapeHTML(pool.base) + '</span></div>' +
+        '<div class="shelf-price">$' + formatPrice(pool.priceUsd) + ' <span class="change ' + changeCls + '" style="font-size:10px;padding:1px 4px;">' + changeSign + pool.change24h.toFixed(1) + '%</span></div>' +
+        '<div class="shelf-meta">MC ' + formatUSD(pool.marketCap !== null ? pool.marketCap : pool.fdv) + '</div>' +
+        (gp !== null ? '<div class="grad-bar"><div class="grad-bar-fill" style="width:' + gp + '%;"></div></div><div class="shelf-meta">' + gp + '% (estimé)</div>' : '') +
+      '</div>'
+    );
+  }
+
+  function shelfHTML(title, caption, pools, showGradBar){
+    if(!pools || pools.length === 0){
+      return '<div class="shelf"><div class="shelf-header"><span class="shelf-title">' + escapeHTML(title) + '</span></div><div class="shelf-empty">Rien à afficher ici pour l\'instant.</div></div>';
+    }
+    return (
+      '<div class="shelf">' +
+        '<div class="shelf-header"><span class="shelf-title">' + escapeHTML(title) + '</span><span class="shelf-caption">' + escapeHTML(caption) + '</span></div>' +
+        '<div class="shelf-row">' + pools.map(function(p){ return shelfCardHTML(p, showGradBar); }).join('') + '</div>' +
+      '</div>'
+    );
+  }
+
+  function renderBoardView(){
+    document.getElementById('network-row').style.display = '';
+    els.platformRow.style.display = 'none';
+    els.filterCount.style.display = 'none';
+    els.status.className = 'status';
+    els.status.textContent = '';
+    els.updatedAt.textContent = '—';
+
+    const newPools = (state.pools.new || []).slice(0, 10);
+    const trendingPools = (state.pools.trending || []).slice(0, 10);
+    const graduating = (state.pools.new || [])
+      .filter(function(p){ return graduationPct(p) !== null; })
+      .sort(function(a, b){ return graduationPct(b) - graduationPct(a); })
+      .slice(0, 10);
+    state.boardGraduating = graduating;
+
+    els.list.innerHTML =
+      paperSummaryStripHTML() +
+      shelfHTML('🆕 Nouvelles paires', 'les plus récentes', newPools, false) +
+      shelfHTML('🎓 Proche de graduer', 'estimation, voir note ci-dessous', graduating, true) +
+      shelfHTML('🔥 En tendance', 'les plus actifs', trendingPools, false) +
+      '<div class="rug-disclaimer" style="padding:0 2px;">Colonne "Proche de graduer" : estimation basée sur la capitalisation vs le seuil fixe de pump.fun (~69k$) — pour Raydium LaunchLab et Meteora DBC, le vrai seuil est configuré par le créateur et peut différer, donc ce %% est indicatif seulement, pas une vraie mesure de la bonding curve.</div>';
+
+    if(!state.pools.new) refresh('new', true);
+    if(!state.pools.trending) refresh('trending', true);
+  }
+
   function rowHTML(pool, isNew){
     const risk = riskBadge(pool.liquidity);
     const bp = buyPressure(pool.txH1);
@@ -1980,6 +2069,10 @@ window.addEventListener('error', function(e){
     els.networkLabel.textContent = NETWORKS[state.network].label;
     els.tabs.forEach(function(t){ t.classList.toggle('active', t.dataset.tab === state.tab); });
 
+    if(state.tab === 'board'){
+      renderBoardView();
+      return;
+    }
     if(state.tab === 'watchlist'){
       renderWatchlist();
       return;
@@ -2255,7 +2348,7 @@ window.addEventListener('error', function(e){
         if(state.watchlistPools === null) refreshWatchlist(false);
       } else if(state.tab === 'paper'){
         refreshPaper(false);
-      } else if(!state.pools[state.tab]){
+      } else if(state.tab !== 'board' && !state.pools[state.tab]){
         refresh(state.tab, false);
       }
     });
@@ -2650,6 +2743,7 @@ window.addEventListener('error', function(e){
     clearInterval(state._chartFullInterval);
     if(state.tab === 'watchlist') refreshWatchlist(true);
     else if(state.tab === 'paper') refreshPaper(true);
+    else if(state.tab === 'board') render();
     else refresh(state.tab, true);
   }
   function wireToggle(btnId, bodyId, openLabel, closedLabel){
@@ -2722,6 +2816,13 @@ window.addEventListener('error', function(e){
       e.stopPropagation();
       toggleWatch(starBtn.dataset.starNetwork, starBtn.dataset.starAddress, starBtn.dataset.starBase, starBtn.dataset.starBaseLabel, starBtn.dataset.starQuote);
       render();
+      return;
+    }
+    const shelfCard = e.target.closest('.shelf-card');
+    if(shelfCard){
+      const combined = [].concat(state.pools.new || [], state.pools.trending || [], state.boardGraduating || []);
+      const found = combined.find(function(p){ return p.address === shelfCard.dataset.address && p.network === shelfCard.dataset.network; });
+      if(found) openTokenModal(found);
       return;
     }
     const row = e.target.closest('.row');
@@ -2845,6 +2946,7 @@ window.addEventListener('error', function(e){
     if(document.visibilityState === 'visible' && !state.chartModalOpen){
       if(state.tab === 'watchlist') refreshWatchlist(true);
       else if(state.tab === 'paper') refreshPaper(true);
+      else if(state.tab === 'board'){ refresh('new', true); refresh('trending', true); }
       else refresh(state.tab, true);
     }
   }, REFRESH_MS);
