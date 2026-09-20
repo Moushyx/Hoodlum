@@ -158,16 +158,17 @@
     border-left:3px solid var(--border);
     border-radius:16px; padding:13px 14px; text-decoration:none; color:var(--text);
     cursor:pointer;
-    transition:border-color .15s ease, background .15s ease;
+    box-shadow:0 2px 10px rgba(0,0,0,0.18);
+    transition:border-color .15s ease, background .15s ease, transform .1s ease;
   }
   .row.risk-accent-high{ border-left-color:var(--red); }
   .row.risk-accent-mid{ border-left-color:var(--yellow); }
   .row.risk-accent-low{ border-left-color:var(--green); }
-  .row:active{background:var(--surface-2);}
+  .row:active{ background:var(--surface-2); transform:scale(0.99); }
   .row-top{ display:flex; align-items:center; gap:10px; }
   .avatar{
     width:34px;height:34px;border-radius:50%;flex:0 0 auto;
-    object-fit:cover; background:var(--surface-2); border:1px solid var(--border);
+    object-fit:cover; background:var(--surface-2); border:1px solid rgba(255,255,255,0.16);
   }
   .avatar-fallback{
     width:34px;height:34px;border-radius:50%;flex:0 0 auto;
@@ -350,10 +351,9 @@
   }
   .score-summary strong{ color:var(--text); }
   .rug-panel{ margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid var(--border); }
-  .rug-verdict{ font-weight:700; font-size:13px; padding:10px 12px; border-radius:10px; margin-bottom:10px; }
-  .rug-score-badge{
-    display:inline-block; margin-right:8px; padding:2px 8px; border-radius:8px;
-    background:rgba(255,255,255,0.14); font-family:var(--mono); font-weight:800; font-size:12px;
+  .rug-verdict{
+    font-weight:800; font-size:20px; font-family:var(--mono);
+    padding:12px; border-radius:10px; margin-bottom:10px; text-align:center;
   }
   .rug-verdict-bad{ background:rgba(251,113,133,0.12); color:var(--red); }
   .rug-verdict-warn{ background:rgba(251,191,36,0.12); color:var(--yellow); }
@@ -1753,7 +1753,7 @@ window.addEventListener('error', function(e){
     return (
       '<div class="rug-panel">' +
         '<div class="td-group-title">Analyse de sécurité</div>' +
-        '<div class="rug-verdict rug-verdict-' + analysis.verdictCls + '"><span class="rug-score-badge">' + scoreBadge + '</span>' + escapeHTML(analysis.verdict) + '</div>' +
+        '<div class="rug-verdict rug-verdict-' + analysis.verdictCls + '">' + scoreBadge + '</div>' +
         checkPillsHTML(pool, sec, network) +
         '<button class="score-toggle" id="rug-toggle-btn" style="margin-top:10px;">Voir le détail complet ▾</button>' +
         '<div class="score-detail" id="rug-detail-body">' +
@@ -1930,7 +1930,7 @@ window.addEventListener('error', function(e){
         rugBadgeHTML(pool, sec, pool.network) +
         '<div class="row-tags">' +
           '<span class="tag network">' + escapeHTML(NETWORKS[pool.network] ? NETWORKS[pool.network].label : pool.network) + '</span>' +
-          '<span class="tag platform">' + escapeHTML(formatPlatform(pool.dexId)) + '</span>' +
+          '<span class="tag platform" style="color:' + hashColor(pool.dexId || 'x') + ';border-color:' + hashColor(pool.dexId || 'x') + '66;">' + escapeHTML(formatPlatform(pool.dexId)) + '</span>' +
           '<span class="tag ' + risk.cls + '">' + risk.label + '</span>' +
         '</div>' +
       '</div>'
@@ -2796,30 +2796,49 @@ window.addEventListener('error', function(e){
     renderPositionBadge(pool);
   });
 
-  function mergeFreshValues(tab, freshByAddress){
-    const pools = state.pools[tab];
-    if(!pools || Object.keys(freshByAddress).length === 0) return false;
-    let touched = false;
-    pools.forEach(function(p){
-      const fresh = freshByAddress[(p.address || '').toLowerCase()];
-      if(!fresh) return;
-      // Price-only merge: liquidity/volume/FDV/market cap/tx counts stay on GeckoTerminal
-      // exclusively so every number shown together comes from one consistent methodology.
-      p.priceUsd = fresh.priceUsd;
-      p.priceNative = fresh.priceNative;
-      p.change24h = fresh.change24h;
-      p.change1h = fresh.change1h;
-      p.change6h = fresh.change6h;
-      p.change5m = fresh.change5m;
-      // Image fallback: very new tokens often aren't indexed by GeckoTerminal yet,
-      // but DexScreener frequently has the launchpad's image sooner.
-      if(fresh.imageUrl && p.baseAddress){
-        const imgKey = p.network + ':' + p.baseAddress.toLowerCase();
-        if(!state.imageCache[imgKey]) state.imageCache[imgKey] = fresh.imageUrl;
-      }
-      touched = true;
+  // Generic fast price merge: groups items by network (DexScreener is per-chain), fetches
+  // each group in one batched call, and applies whatever the caller wants per item.
+  function fastMergePrices(items, getNetworkAddress, applyFresh){
+    const byNetwork = {};
+    items.forEach(function(item){
+      const na = getNetworkAddress(item);
+      if(!na || !na.address) return;
+      if(!byNetwork[na.network]) byNetwork[na.network] = [];
+      if(byNetwork[na.network].indexOf(na.address) === -1) byNetwork[na.network].push(na.address);
     });
-    return touched;
+    const networks = Object.keys(byNetwork);
+    if(networks.length === 0) return Promise.resolve(false);
+    return Promise.all(networks.map(function(net){
+      return fetchBatchFast(net, byNetwork[net]).then(function(freshByAddress){
+        let touched = false;
+        items.forEach(function(item){
+          const na = getNetworkAddress(item);
+          if(!na || na.network !== net) return;
+          const fresh = freshByAddress[(na.address || '').toLowerCase()];
+          if(!fresh) return;
+          applyFresh(item, fresh);
+          touched = true;
+        });
+        return touched;
+      });
+    })).then(function(results){ return results.some(Boolean); });
+  }
+
+  function applyFreshPoolFields(p, fresh){
+    // Price-only merge: liquidity/volume/FDV/market cap/tx counts stay on GeckoTerminal
+    // exclusively so every number shown together comes from one consistent methodology.
+    p.priceUsd = fresh.priceUsd;
+    p.priceNative = fresh.priceNative;
+    p.change24h = fresh.change24h;
+    p.change1h = fresh.change1h;
+    p.change6h = fresh.change6h;
+    p.change5m = fresh.change5m;
+    // Image fallback: very new tokens often aren't indexed by GeckoTerminal yet,
+    // but DexScreener frequently has the launchpad's image sooner.
+    if(fresh.imageUrl && p.baseAddress){
+      const imgKey = p.network + ':' + p.baseAddress.toLowerCase();
+      if(!state.imageCache[imgKey]) state.imageCache[imgKey] = fresh.imageUrl;
+    }
   }
 
   setInterval(function(){
@@ -2832,16 +2851,27 @@ window.addEventListener('error', function(e){
 
   setInterval(function(){
     if(document.visibilityState !== 'visible' || state.chartModalOpen) return;
-    if(state.tab !== 'trending' && state.tab !== 'new') return;
-    const pools = state.pools[state.tab];
-    if(!pools || pools.length === 0) return;
-    const addresses = pools.map(function(p){ return p.address; }).filter(Boolean);
-    fetchBatchFast(state.network, addresses).then(function(freshByAddress){
-      if(mergeFreshValues(state.tab, freshByAddress)){
-        state.preserveOrder = true;
-        render();
-      }
-    });
+    const tab = state.tab;
+    const na = function(p){ return { network: p.network, address: p.address }; };
+    if(tab === 'trending' || tab === 'new'){
+      const pools = state.pools[tab];
+      if(!pools || pools.length === 0) return;
+      fastMergePrices(pools, na, applyFreshPoolFields).then(function(touched){
+        if(touched){ state.preserveOrder = true; render(); }
+      });
+    } else if(tab === 'watchlist'){
+      const pools = state.watchlistPools;
+      if(!pools || pools.length === 0) return;
+      fastMergePrices(pools, na, applyFreshPoolFields).then(function(touched){
+        if(touched) render();
+      });
+    } else if(tab === 'paper'){
+      const positions = state.paper.positions;
+      if(!positions || positions.length === 0) return;
+      fastMergePrices(positions, na, function(pos, fresh){ pos._currentPrice = fresh.priceUsd; }).then(function(touched){
+        if(touched) render();
+      });
+    }
   }, 500);
 
   (function setupOnboarding(){
