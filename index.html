@@ -207,6 +207,7 @@
   }
   .row.just-in{ animation:justIn 2.2s ease-out; }
   .meta{ font-family:var(--mono); font-size:11px; color:var(--text-muted); }
+  .age-live.fresh{ color:var(--yellow); font-weight:600; }
   .row-tags{ display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
   .tag{
     font-size:10.5px; padding:3px 8px; border-radius:20px;
@@ -246,6 +247,7 @@
     flex:0 0 138px; background:var(--surface); border:1px solid var(--border); border-radius:14px;
     padding:11px; cursor:pointer;
   }
+  .shelf-card-sniper{ border-color:rgba(251,113,133,0.55); box-shadow:0 0 0 1px rgba(251,113,133,0.2) inset; }
   .shelf-card:active{ background:var(--surface-2); }
   .shelf-card-top{ display:flex; align-items:center; gap:7px; margin-bottom:7px; }
   .shelf-pair{ font-weight:700; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
@@ -642,6 +644,34 @@
 
   </div>
 
+  <div class="two-col">
+    <div class="field">
+      <label>Fenêtre pic de lancement</label>
+      <select id="f-sniper-window">
+        <option value="m5" selected>5 min</option>
+        <option value="h1">1 h</option>
+        <option value="h6">6 h</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Seuil de hausse suspecte</label>
+      <select id="f-sniper-threshold">
+        <option value="100">+100%</option>
+        <option value="150">+150%</option>
+        <option value="300" selected>+300%</option>
+        <option value="500">+500%</option>
+        <option value="1000">+1000%</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="field">
+    <label style="display:flex;align-items:center;justify-content:space-between;">
+      <span>Masquer les pics de lancement suspects</span>
+      <input type="checkbox" id="f-hide-sniper" style="width:20px;height:20px;">
+    </label>
+  </div>
+
   <div class="field">
     <label>Pression achats min (1h)</label>
     <select id="f-buypressure">
@@ -862,7 +892,7 @@ window.addEventListener('error', function(e){
     loading: false,
     refreshing: false,
     sortBy: 'new',
-    filters: { search: '', minLiquidity: 0, minVolume: 0, minChange24h: null, maxAgeMinutes: null, minBuyPressure: null, maxFdv: null, minBuys1h: null, minHolders: null, platforms: new Set() },
+    filters: { search: '', minLiquidity: 0, minVolume: 0, minChange24h: null, maxAgeMinutes: null, minBuyPressure: null, maxFdv: null, minBuys1h: null, minHolders: null, sniperWindow: 'm5', sniperThresholdPct: 300, hideSniper: false, platforms: new Set() },
     imageCache: {},
     securityCache: {},
     seenIds: {},
@@ -904,6 +934,9 @@ window.addEventListener('error', function(e){
     fFdv: document.getElementById('f-fdv'),
     fBuys1h: document.getElementById('f-buys1h'),
     fHolders: document.getElementById('f-holders'),
+    fSniperWindow: document.getElementById('f-sniper-window'),
+    fSniperThreshold: document.getElementById('f-sniper-threshold'),
+    fHideSniper: document.getElementById('f-hide-sniper'),
     fSort: document.getElementById('f-sort'),
     fReset: document.getElementById('f-reset'),
     fApply: document.getElementById('f-apply'),
@@ -976,6 +1009,36 @@ window.addEventListener('error', function(e){
     return Math.floor(h / 24) + ' j';
   }
 
+  // Version seconde-par-seconde de formatAge, pour les tokens tout juste lancés : c'est dans
+  // cette fenêtre-là (les premières secondes/minutes) qu'un pic de sniper se joue, donc l'affichage
+  // doit ticker en direct plutôt que de sauter par paliers d'une minute comme formatAge.
+  function formatAgeLive(date){
+    if(!date) return '—';
+    const diffSec = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+    if(diffSec < 60) return diffSec + 's';
+    if(diffSec < 3600){
+      const m = Math.floor(diffSec / 60), s = diffSec % 60;
+      return m + 'm ' + String(s).padStart(2, '0') + 's';
+    }
+    const diffMin = Math.floor(diffSec / 60);
+    const h = Math.floor(diffMin / 60);
+    if(h < 24) return h + ' h';
+    return Math.floor(h / 24) + ' j';
+  }
+
+  // Toutes les lignes vivantes portent un span .age-live[data-created] ; on ne fait que réécrire
+  // leur texte chaque seconde, sans re-render complet (pas de perte de scroll, coût quasi nul).
+  function tickLiveAges(){
+    document.querySelectorAll('.age-live[data-created]').forEach(function(el){
+      const iso = el.getAttribute('data-created');
+      if(!iso) return;
+      const d = new Date(iso);
+      const fresh = (Date.now() - d.getTime()) < 60000;
+      el.textContent = formatAgeLive(d);
+      el.classList.toggle('fresh', fresh);
+    });
+  }
+
   function ageMinutes(date){
     if(!date) return Infinity;
     return Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
@@ -1024,6 +1087,25 @@ window.addEventListener('error', function(e){
     if(totalTx1h < JUST_GRADUATED_MIN_TX_1H) return false;
     if(!isFinite(pool.volume1h) || pool.volume1h < JUST_GRADUATED_MIN_VOL_1H) return false;
     return true;
+  }
+
+  // On n'a pas accès aux bougies seconde par seconde (voir la note dans rugSignalsHTML) — seulement
+  // aux variations agrégées 5m/1h/6h renvoyées par l'API. C'est la meilleure approximation possible
+  // du "pic vertical juste après le lancement" avec cette donnée : une grosse variation sur une
+  // fenêtre courte, alors que le token est encore assez jeune pour que ce ne soit pas juste un move
+  // de marché normal. windowSec/threshold sont réglables (☰ Filtres) ; la fenêtre d'âge max est liée
+  // à la fenêtre choisie pour rester cohérente (inutile de juger un +300% sur 6h chez un token vieux
+  // de 3 jours de la même façon qu'un +300% sur 5 min chez un token vieux de 2 minutes).
+  const SNIPER_WINDOW_MAX_AGE_MIN = { m5: 30, h1: 90, h6: 360 };
+  function sniperSpikeInfo(pool){
+    const f = state.filters;
+    const windowKey = (f && f.sniperWindow) || 'm5';
+    const change = windowKey === 'h1' ? pool.change1h : windowKey === 'h6' ? pool.change6h : pool.change5m;
+    const ageMin = ageMinutes(pool.createdAt);
+    const maxAge = SNIPER_WINDOW_MAX_AGE_MIN[windowKey] || 30;
+    const evaluated = isFinite(change) && ageMin <= maxAge;
+    const threshold = (f && f.sniperThresholdPct) || 300;
+    return { evaluated: evaluated, flagged: evaluated && change >= threshold, change: change, windowKey: windowKey };
   }
 
   function riskBadge(liquidity){
@@ -1598,6 +1680,7 @@ window.addEventListener('error', function(e){
     if(f.maxFdv !== null) n++;
     if(f.minBuys1h !== null) n++;
     if(f.minHolders !== null) n++;
+    if(f.hideSniper) n++;
     if(f.platforms.size > 0) n++;
     return n;
   }
@@ -1660,11 +1743,10 @@ window.addEventListener('error', function(e){
       add('Volume vs liquidité', 'unknown', 'Donnée insuffisante');
     }
 
-    const ageMinutes_ = pool.createdAt ? Math.max(0, Math.floor((Date.now() - pool.createdAt.getTime()) / 60000)) : null;
-    if(ageMinutes_ !== null && ageMinutes_ < 30){
-      const extremePump = pool.change5m > 300 || pool.change1h > 500;
-      add('Hausse initiale', extremePump ? 'warn' : 'ok',
-        extremePump ? 'Pic extrême dès les premières minutes — schéma classique de pump-and-dump' : 'Pas de pic anormal détecté');
+    const spike_ = sniperSpikeInfo(pool);
+    if(spike_.evaluated){
+      add('Hausse initiale', spike_.flagged ? 'bad' : 'ok',
+        spike_.flagged ? 'Pic de +' + Math.round(spike_.change) + '% détecté — schéma classique de pump-and-dump (sniper bot ou bundle)' : 'Pas de pic anormal détecté');
     }
 
     if(!state.sessionLiquidityPeak) state.sessionLiquidityPeak = {};
@@ -1752,10 +1834,10 @@ window.addEventListener('error', function(e){
       if(volRatio > 30) pattern -= 60;
       else if(volRatio > 15) pattern -= 25;
     }
-    const ageMin = pool.createdAt ? Math.max(0, Math.floor((Date.now() - pool.createdAt.getTime()) / 60000)) : null;
-    if(ageMin !== null && ageMin < 30){
+    const spike = sniperSpikeInfo(pool);
+    if(spike.evaluated){
       patternKnown = true;
-      if(pool.change5m > 300 || pool.change1h > 500) pattern -= 35;
+      if(spike.flagged) pattern -= 35;
     }
     pattern = patternKnown ? Math.max(0, pattern) : null;
 
@@ -2039,11 +2121,13 @@ window.addEventListener('error', function(e){
     const changeCls = pool.change24h >= 0 ? 'pos' : 'neg';
     const changeSign = pool.change24h >= 0 ? '+' : '';
     const gp = showGradBar ? graduationPct(pool) : null;
+    const spike = sniperSpikeInfo(pool);
     return (
-      '<div class="shelf-card" data-network="' + escapeHTML(pool.network) + '" data-address="' + escapeHTML(pool.address) + '" data-pair="' + escapeHTML(pool.base) + ' / ' + escapeHTML(pool.quote) + '">' +
+      '<div class="shelf-card' + (spike.flagged ? ' shelf-card-sniper' : '') + '" data-network="' + escapeHTML(pool.network) + '" data-address="' + escapeHTML(pool.address) + '" data-pair="' + escapeHTML(pool.base) + ' / ' + escapeHTML(pool.quote) + '">' +
         '<div class="shelf-card-top">' + avatarHTML(pool) + '<span class="shelf-pair">' + escapeHTML(pool.base) + '</span></div>' +
         '<div class="shelf-price">$' + formatPrice(pool.priceUsd) + ' <span class="change ' + changeCls + '" style="font-size:10px;padding:1px 4px;">' + changeSign + pool.change24h.toFixed(1) + '%</span></div>' +
-        '<div class="shelf-meta">MC ' + formatUSD(pool.marketCap !== null ? pool.marketCap : pool.fdv) + '</div>' +
+        '<div class="shelf-meta">MC ' + formatUSD(pool.marketCap !== null ? pool.marketCap : pool.fdv) + ' · <span class="age-live" data-created="' + (pool.createdAt ? pool.createdAt.toISOString() : '') + '">' + formatAgeLive(pool.createdAt) + '</span></div>' +
+        (spike.flagged ? '<div class="shelf-meta" style="color:var(--red);font-weight:600;">⚡ Pic +' + Math.round(spike.change) + '%</div>' : '') +
         (gp !== null ? '<div class="grad-bar"><div class="grad-bar-fill" style="width:' + gp + '%;"></div></div><div class="shelf-meta">' + gp + '% (estimé)</div>' : '') +
       '</div>'
     );
@@ -2112,12 +2196,13 @@ window.addEventListener('error', function(e){
     }
     state.lastPrices[priceKey] = pool.priceUsd;
 
+    const spike = sniperSpikeInfo(pool);
     const metaBits = ['MC ' + formatUSD(pool.marketCap !== null ? pool.marketCap : pool.fdv), 'Liq ' + formatUSD(pool.liquidity), 'Vol ' + formatUSD(pool.volume24h)];
     if(bp !== null){
       const totalTx = (pool.txH1.buys || 0) + (pool.txH1.sells || 0);
       metaBits.push(bp + '% achats (' + totalTx + ')');
     }
-    metaBits.push(formatAge(pool.createdAt));
+    metaBits.push('<span class="age-live" data-created="' + (pool.createdAt ? pool.createdAt.toISOString() : '') + '">' + formatAgeLive(pool.createdAt) + '</span>');
 
     return (
       '<div class="row risk-accent-' + risk.cls.replace('risk-', '') + (isNew ? ' just-in' : '') + '" data-pool-id="' + escapeHTML(pool.id) + '" data-network="' + escapeHTML(pool.network) + '" data-address="' + escapeHTML(pool.address) + '" data-base-address="' + escapeHTML(pool.baseAddress) + '" data-pair="' + escapeHTML(pool.base) + ' / ' + escapeHTML(pool.quote) + '">' +
@@ -2142,6 +2227,7 @@ window.addEventListener('error', function(e){
           '<span class="tag network">' + escapeHTML(NETWORKS[pool.network] ? NETWORKS[pool.network].label : pool.network) + '</span>' +
           '<span class="tag platform" style="color:' + hashColor(pool.dexId || 'x') + ';border-color:' + hashColor(pool.dexId || 'x') + '66;">' + escapeHTML(formatPlatform(pool.dexId)) + '</span>' +
           '<span class="tag ' + risk.cls + '">' + risk.label + '</span>' +
+          (spike.flagged ? '<span class="tag risk-high">⚡ Pic suspect +' + Math.round(spike.change) + '%</span>' : '') +
         '</div>' +
       '</div>'
     );
@@ -2255,6 +2341,7 @@ window.addEventListener('error', function(e){
         const sec = secKey ? state.securityCache[secKey] : null;
         if(!sec || sec.holderCount === null || sec.holderCount < f.minHolders) return false;
       }
+      if(f.hideSniper && sniperSpikeInfo(p).flagged) return false;
       if(f.platforms.size > 0 && !f.platforms.has(p.dexId)) return false;
       if(f.search){
         const q = f.search.toLowerCase();
@@ -2493,6 +2580,9 @@ window.addEventListener('error', function(e){
     els.fFdv.value = state.filters.maxFdv === null ? '' : String(state.filters.maxFdv);
     els.fBuys1h.value = state.filters.minBuys1h === null ? '' : String(state.filters.minBuys1h);
     els.fHolders.value = state.filters.minHolders === null ? '' : String(state.filters.minHolders);
+    els.fSniperWindow.value = state.filters.sniperWindow || 'm5';
+    els.fSniperThreshold.value = String(state.filters.sniperThresholdPct || 300);
+    els.fHideSniper.checked = !!state.filters.hideSniper;
     els.fSort.value = state.sortBy;
     els.backdrop.classList.add('open');
     els.sheet.classList.add('open');
@@ -2513,10 +2603,13 @@ window.addEventListener('error', function(e){
   els.fFdv.addEventListener('change', function(e){ state.filters.maxFdv = e.target.value === '' ? null : parseInt(e.target.value, 10); render(); });
   els.fBuys1h.addEventListener('change', function(e){ state.filters.minBuys1h = e.target.value === '' ? null : parseInt(e.target.value, 10); render(); });
   els.fHolders.addEventListener('change', function(e){ state.filters.minHolders = e.target.value === '' ? null : parseInt(e.target.value, 10); render(); });
+  els.fSniperWindow.addEventListener('change', function(e){ state.filters.sniperWindow = e.target.value; render(); });
+  els.fSniperThreshold.addEventListener('change', function(e){ state.filters.sniperThresholdPct = parseInt(e.target.value, 10) || 300; render(); });
+  els.fHideSniper.addEventListener('change', function(e){ state.filters.hideSniper = e.target.checked; render(); });
   els.fSort.addEventListener('change', function(e){ state.sortBy = e.target.value; render(); });
 
   els.fReset.addEventListener('click', function(){
-    state.filters = { search: '', minLiquidity: 0, minVolume: 0, minChange24h: null, maxAgeMinutes: null, minBuyPressure: null, maxFdv: null, minBuys1h: null, minHolders: null, platforms: new Set() };
+    state.filters = { search: '', minLiquidity: 0, minVolume: 0, minChange24h: null, maxAgeMinutes: null, minBuyPressure: null, maxFdv: null, minBuys1h: null, minHolders: null, sniperWindow: 'm5', sniperThresholdPct: 300, hideSniper: false, platforms: new Set() };
     state.sortBy = 'new';
     openSheet();
     render();
@@ -2557,6 +2650,10 @@ window.addEventListener('error', function(e){
       renderPresetChips();
     } else {
       state.filters = Object.assign({}, preset.filters, { platforms: new Set(preset.filters.platforms || []) });
+      // Préréglages enregistrés avant l'ajout du filtre sniper : on complète avec les valeurs par défaut.
+      if(state.filters.sniperWindow === undefined) state.filters.sniperWindow = 'm5';
+      if(state.filters.sniperThresholdPct === undefined) state.filters.sniperThresholdPct = 300;
+      if(state.filters.hideSniper === undefined) state.filters.hideSniper = false;
       state.sortBy = preset.sortBy || 'new';
       openSheet();
       render();
@@ -3067,6 +3164,13 @@ window.addEventListener('error', function(e){
       if(!state.imageCache[imgKey]) state.imageCache[imgKey] = fresh.imageUrl;
     }
   }
+
+  // Âge en temps réel : pur calcul côté client à partir de pool.createdAt, donc pas besoin
+  // d'attendre le prochain cycle de refresh réseau pour que le compteur avance.
+  tickLiveAges();
+  setInterval(function(){
+    if(document.visibilityState === 'visible') tickLiveAges();
+  }, 1000);
 
   setInterval(function(){
     if(document.visibilityState === 'visible' && !state.chartModalOpen){
