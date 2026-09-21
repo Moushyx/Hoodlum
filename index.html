@@ -1007,6 +1007,25 @@ window.addEventListener('error', function(e){
     return Math.max(0, Math.min(100, Math.round((mcap / APPROX_GRADUATION_MCAP) * 100)));
   }
 
+  // Only PumpSwap gives a reliable "just graduated" signal: it's pump.fun's dedicated
+  // post-graduation venue, so a PumpSwap pool's own creation time IS the migration time.
+  // Raydium LaunchLab and Meteora DBC migrate into generic pools (plain "raydium",
+  // "meteora_damm_v2", etc.) indistinguishable from any other pool on those platforms, so we
+  // can't detect "just graduated from LaunchLab/DBC" this way — this shelf misses those.
+  const JUST_GRADUATED_MAX_AGE_MIN = 120;
+  const JUST_GRADUATED_MIN_TX_1H = 5;
+  const JUST_GRADUATED_MIN_VOL_1H = 500;
+  function justGraduatedWithActivity(pool){
+    const d = (pool.dexId || '').toLowerCase();
+    if(d.indexOf('pumpswap') === -1) return false;
+    const ageMin = pool.createdAt ? Math.max(0, Math.floor((Date.now() - pool.createdAt.getTime()) / 60000)) : null;
+    if(ageMin === null || ageMin > JUST_GRADUATED_MAX_AGE_MIN) return false;
+    const totalTx1h = (pool.txH1 && pool.txH1.buys || 0) + (pool.txH1 && pool.txH1.sells || 0);
+    if(totalTx1h < JUST_GRADUATED_MIN_TX_1H) return false;
+    if(!isFinite(pool.volume1h) || pool.volume1h < JUST_GRADUATED_MIN_VOL_1H) return false;
+    return true;
+  }
+
   function riskBadge(liquidity){
     if(liquidity < 5000) return { label: 'Liquidité très faible', cls: 'risk-high' };
     if(liquidity < 50000) return { label: 'Liquidité faible', cls: 'risk-mid' };
@@ -2057,13 +2076,19 @@ window.addEventListener('error', function(e){
       .sort(function(a, b){ return graduationPct(b) - graduationPct(a); })
       .slice(0, 10);
     state.boardGraduating = graduating;
+    const justGraduated = (state.pools.new || [])
+      .filter(justGraduatedWithActivity)
+      .sort(function(a, b){ return b.volume1h - a.volume1h; })
+      .slice(0, 10);
+    state.boardJustGraduated = justGraduated;
 
     els.list.innerHTML =
       paperSummaryStripHTML() +
       shelfHTML('🆕 Nouvelles paires', 'les plus récentes', newPools, false) +
       shelfHTML('🎓 Proche de graduer', 'estimation, voir note ci-dessous', graduating, true) +
+      shelfHTML('🚀 Vient de graduer', 'activité maintenue après migration', justGraduated, false) +
       shelfHTML('🔥 En tendance', 'les plus actifs', trendingPools, false) +
-      '<div class="rug-disclaimer" style="padding:0 2px;">Colonne "Proche de graduer" : ne montre que les tokens entre 45k$ et 60k$ de capitalisation, une fourchette resserrée autour du seuil fixe de pump.fun (~69k$) — pour Raydium LaunchLab et Meteora DBC, le vrai seuil est configuré par le créateur et peut différer, donc ce %% reste indicatif, pas une vraie mesure de la bonding curve.</div>';
+      '<div class="rug-disclaimer" style="padding:0 2px;">Colonne "Proche de graduer" : ne montre que les tokens entre 45k$ et 60k$ de capitalisation, une fourchette resserrée autour du seuil fixe de pump.fun (~69k$) — pour Raydium LaunchLab et Meteora DBC, le vrai seuil est configuré par le créateur et peut différer, donc ce %% reste indicatif, pas une vraie mesure de la bonding curve. Colonne "Vient de graduer" : ne détecte fiablement que les migrations depuis pump.fun vers PumpSwap (au moins 5 transactions et 500$ de volume sur la dernière heure) — Raydium LaunchLab et Meteora DBC migrent vers des pools génériques qu\'on ne peut pas distinguer d\'un pool classique, donc ces graduations-là n\'apparaissent pas ici.</div>';
 
     if(!state.pools.new) refresh('new', true);
     if(!state.pools.trending) refresh('trending', true);
@@ -2921,7 +2946,7 @@ window.addEventListener('error', function(e){
     }
     const shelfCard = e.target.closest('.shelf-card');
     if(shelfCard){
-      const combined = [].concat(state.pools.new || [], state.pools.trending || [], state.boardGraduating || []);
+      const combined = [].concat(state.pools.new || [], state.pools.trending || [], state.boardGraduating || [], state.boardJustGraduated || []);
       const found = combined.find(function(p){ return p.address === shelfCard.dataset.address && p.network === shelfCard.dataset.network; });
       if(found) openTokenModal(found);
       return;
