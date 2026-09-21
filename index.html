@@ -1633,6 +1633,30 @@ window.addEventListener('error', function(e){
       add('Liquidité vs FDV', 'unknown', 'Donnée insuffisante');
     }
 
+    if(pool.liquidity > 0 && isFinite(pool.volume24h)){
+      const volRatio = pool.volume24h / pool.liquidity;
+      add('Volume vs liquidité', volRatio > 30 ? 'bad' : (volRatio > 15 ? 'warn' : 'ok'),
+        volRatio > 15 ? Math.round(volRatio) + 'x la liquidité — signe classique de wash trading' : Math.round(volRatio) + 'x la liquidité');
+    } else {
+      add('Volume vs liquidité', 'unknown', 'Donnée insuffisante');
+    }
+
+    const ageMinutes_ = pool.createdAt ? Math.max(0, Math.floor((Date.now() - pool.createdAt.getTime()) / 60000)) : null;
+    if(ageMinutes_ !== null && ageMinutes_ < 30){
+      const extremePump = pool.change5m > 300 || pool.change1h > 500;
+      add('Hausse initiale', extremePump ? 'warn' : 'ok',
+        extremePump ? 'Pic extrême dès les premières minutes — schéma classique de pump-and-dump' : 'Pas de pic anormal détecté');
+    }
+
+    if(!state.sessionLiquidityPeak) state.sessionLiquidityPeak = {};
+    const liqKey_ = pool.network + ':' + pool.address;
+    const prevPeak_ = state.sessionLiquidityPeak[liqKey_];
+    if(prevPeak_ !== undefined && prevPeak_ > 1500 && pool.liquidity < prevPeak_ * 0.5){
+      add('Liquidité (évolution)', 'bad',
+        'A chuté de ' + formatUSD(prevPeak_) + ' à ' + formatUSD(pool.liquidity) + ' depuis le début de ta surveillance — rug possiblement en cours');
+    }
+    if(prevPeak_ === undefined || pool.liquidity > prevPeak_) state.sessionLiquidityPeak[liqKey_] = pool.liquidity;
+
     if(!sec){
       add('Vérification du contrat', 'unknown', 'Pas encore analysé par GoPlus (token très récent)');
     } else {
@@ -1700,11 +1724,36 @@ window.addEventListener('error', function(e){
       holders = sec.holderCount >= 200 ? 100 : sec.holderCount >= 50 ? 60 : 20;
     }
 
-    const parts = { liq: liq, mint: mint, lp: lp, buy: buy, holders: holders };
+    // Pattern-based red flags: wash-trading-shaped volume, and a pump-and-dump-shaped early spike.
+    let pattern = 100;
+    let patternKnown = false;
+    if(pool.liquidity > 0 && isFinite(pool.volume24h)){
+      patternKnown = true;
+      const volRatio = pool.volume24h / pool.liquidity;
+      if(volRatio > 30) pattern -= 60;
+      else if(volRatio > 15) pattern -= 25;
+    }
+    const ageMin = pool.createdAt ? Math.max(0, Math.floor((Date.now() - pool.createdAt.getTime()) / 60000)) : null;
+    if(ageMin !== null && ageMin < 30){
+      patternKnown = true;
+      if(pool.change5m > 300 || pool.change1h > 500) pattern -= 35;
+    }
+    pattern = patternKnown ? Math.max(0, pattern) : null;
+
+    const parts = { liq: liq, mint: mint, lp: lp, buy: buy, holders: holders, pattern: pattern };
     const known = Object.keys(parts).filter(function(k){ return parts[k] !== null; });
-    const total = known.length
+    let total = known.length
       ? Math.round(known.reduce(function(s, k){ return s + parts[k]; }, 0) / known.length)
       : null;
+
+    // A liquidity collapse since we started watching this token is close to definitive proof of
+    // an active rug — this overrides the averaged score rather than being diluted by other parts.
+    const liqKey = pool.network + ':' + pool.address;
+    const peak = state.sessionLiquidityPeak && state.sessionLiquidityPeak[liqKey];
+    if(peak && peak > 1500 && pool.liquidity < peak * 0.5 && total !== null){
+      total = Math.min(total, 10);
+    }
+
     return { total: total, parts: parts, knownCount: known.length };
   }
 
@@ -1721,7 +1770,8 @@ window.addEventListener('error', function(e){
       { key: 'mint', label: 'Mint' },
       { key: 'lp', label: 'LP' },
       { key: 'buy', label: 'Achats' },
-      { key: 'holders', label: 'Holders' }
+      { key: 'holders', label: 'Holders' },
+      { key: 'pattern', label: 'Pattern' }
     ];
     const cx = 100, cy = 100, r = 72;
     const angle = function(i){ return (Math.PI * 2 * i / axes.length) - Math.PI / 2; };
@@ -1798,12 +1848,15 @@ window.addEventListener('error', function(e){
     const mintStatus = sec ? (sec.mintable ? 'bad' : 'ok') : 'unknown';
     const lpStatus = (sec && sec.lpLockedPct !== null) ? (sec.lpLockedPct >= 80 ? 'ok' : 'bad') : 'unknown';
     const topStatus = (sec && sec.topHolderPct !== null) ? (sec.topHolderPct > 50 ? 'bad' : sec.topHolderPct > 30 ? 'warn' : 'ok') : 'unknown';
+    const volStatus = (pool.liquidity > 0 && isFinite(pool.volume24h))
+      ? (function(){ const r = pool.volume24h / pool.liquidity; return r > 30 ? 'bad' : r > 15 ? 'warn' : 'ok'; })()
+      : 'unknown';
     let pills = pill('Mint', mintStatus) + pill('LP', lpStatus);
     if(network !== 'solana'){
       const honeypotStatus = (sec && sec.isHoneypot !== null) ? (sec.isHoneypot ? 'bad' : 'ok') : 'unknown';
       pills += pill('Honeypot', honeypotStatus);
     }
-    pills += pill('Top 10', topStatus);
+    pills += pill('Top 10', topStatus) + pill('Volume', volStatus);
     if(bmUrl) pills += '<a class="check-pill check-link" href="' + escapeHTML(bmUrl) + '" target="_blank" rel="noopener"><span>🔗</span><span>Clusters</span></a>';
     return '<div class="check-row">' + pills + '</div>';
   }
@@ -1838,7 +1891,7 @@ window.addEventListener('error', function(e){
         '<div class="score-detail" id="rug-detail-body">' +
           '<div class="score-radar-wrap">' + radarSVG(score.parts) + '</div>' +
           securityDetailRowsHTML(pool, sec, score, network) +
-          '<div class="rug-disclaimer">Vérification de motifs connus, pas une prédiction. Un rug bien préparé peut cocher toutes ces cases — ceci réduit le risque évident, ne l\'annule pas. Le % de concentration ne détecte pas les wallets liés entre eux (financés depuis une même source) — touche "Clusters" ci-dessus pour vérifier ça sur Bubblemaps. Surveille aussi les ventes marquées <span class="dev-tag">DEV</span> dans l\'activité récente. Pas un conseil financier.</div>' +
+          '<div class="rug-disclaimer">Vérification de motifs connus, pas une prédiction. Un rug bien préparé peut cocher toutes ces cases — ceci réduit le risque évident, ne l\'annule pas. "Volume vs liquidité" et "Hausse initiale" repèrent des schémas de wash trading et de pump-and-dump ; "Liquidité (évolution)" ne peut détecter une chute que si tu observes le token depuis un moment — elle ne voit rien avant l\'ouverture de sa fiche. On ne lit pas encore la forme du graphique bougie par bougie (ça demanderait des requêtes en plus qu\'on n\'a pas les moyens de faire pour l\'instant). Le % de concentration ne détecte pas les wallets liés entre eux — touche "Clusters" ci-dessus pour vérifier ça sur Bubblemaps. Surveille aussi les ventes marquées <span class="dev-tag">DEV</span> dans l\'activité récente. Pas un conseil financier.</div>' +
         '</div>' +
       '</div>'
     );
