@@ -698,6 +698,13 @@
   </div>
 
   <div class="field">
+    <label style="display:flex;align-items:center;justify-content:space-between;">
+      <span>Exclure les progressions suspectes (escalier)</span>
+      <input type="checkbox" id="f-exclude-staircase" style="width:20px;height:20px;">
+    </label>
+  </div>
+
+  <div class="field">
     <label>Trier par</label>
     <select id="f-sort">
       <option value="volume">Volume 24h</option>
@@ -877,7 +884,7 @@ window.addEventListener('error', function(e){
     loading: false,
     refreshing: false,
     sortBy: 'new',
-    filters: { search: '', minLiquidity: 0, minVolume: 0, minChange24h: null, maxAgeMinutes: null, minBuyPressure: null, maxFdv: null, minBuys1h: null, minHolders: null, platforms: new Set() },
+    filters: { search: '', minLiquidity: 0, minVolume: 0, minChange24h: null, maxAgeMinutes: null, minBuyPressure: null, maxFdv: null, minBuys1h: null, minHolders: null, excludeStaircase: false, platforms: new Set() },
     imageCache: {},
     securityCache: {},
     socialsCache: {},
@@ -920,6 +927,7 @@ window.addEventListener('error', function(e){
     fFdv: document.getElementById('f-fdv'),
     fBuys1h: document.getElementById('f-buys1h'),
     fHolders: document.getElementById('f-holders'),
+    fExcludeStaircase: document.getElementById('f-exclude-staircase'),
     fSort: document.getElementById('f-sort'),
     fReset: document.getElementById('f-reset'),
     fApply: document.getElementById('f-apply'),
@@ -1003,6 +1011,19 @@ window.addEventListener('error', function(e){
   // pump.fun's known fixed ~$69k market-cap threshold as the closest available reference point,
   // so this is meaningfully more reliable for pump.fun tokens than for LaunchLab/DBC ones.
   const APPROX_GRADUATION_MCAP = 69000;
+  // For a token still younger than ~20 minutes, the 1h and 6h change windows both cover its
+  // entire trading history, so they SHOULD read the same. If they do, and the move is sizeable,
+  // the price has gone in one uninterrupted direction since launch with no real back-and-forth —
+  // not organic trading, but the signature of a single actor (or bot) steadily pushing price up
+  // a "staircase" chart. This needs no extra data — it's a pattern within what we already fetch.
+  function isSuspiciousStaircase(pool){
+    const ageMin = pool.createdAt ? Math.max(0, Math.floor((Date.now() - pool.createdAt.getTime()) / 60000)) : null;
+    if(ageMin === null || ageMin > 20) return false;
+    if(!isFinite(pool.change1h) || !isFinite(pool.change6h)) return false;
+    if(Math.abs(pool.change1h) < 8) return false;
+    return Math.abs(pool.change1h - pool.change6h) < 2;
+  }
+
   function isBondingCurvePlatform(dexId){
     const d = (dexId || '').toLowerCase();
     // PumpSwap is pump.fun's POST-graduation AMM (already migrated) — it must never match here
@@ -1645,6 +1666,7 @@ window.addEventListener('error', function(e){
     if(f.maxFdv !== null) n++;
     if(f.minBuys1h !== null) n++;
     if(f.minHolders !== null) n++;
+    if(f.excludeStaircase) n++;
     if(f.platforms.size > 0) n++;
     return n;
   }
@@ -1712,6 +1734,12 @@ window.addEventListener('error', function(e){
       const extremePump = pool.change5m > 300 || pool.change1h > 500;
       add('Hausse initiale', extremePump ? 'warn' : 'ok',
         extremePump ? 'Pic extrême dès les premières minutes — schéma classique de pump-and-dump' : 'Pas de pic anormal détecté');
+    }
+
+    if(ageMinutes_ !== null && ageMinutes_ <= 20 && isFinite(pool.change1h) && isFinite(pool.change6h)){
+      const staircase = isSuspiciousStaircase(pool);
+      add('Progression du prix', staircase ? 'bad' : 'ok',
+        staircase ? 'Hausse ininterrompue depuis le lancement (1h et 6h quasi identiques) — signature typique d\'un seul acteur qui pousse le prix' : 'Pas de progression suspecte détectée');
     }
 
     if(!state.sessionLiquidityPeak) state.sessionLiquidityPeak = {};
@@ -1875,10 +1903,14 @@ window.addEventListener('error', function(e){
   function rugBadgeHTML(pool, sec, network){
     const analysis = computeRugSignals(pool, sec, network);
     const known = analysis.signals.filter(function(s){ return s.status !== 'unknown'; }).length;
+    const staircase = isSuspiciousStaircase(pool);
     let label, cls;
     if(known === 0){
       label = '? Anti-rug : pas encore assez de données';
       cls = 'rug-badge-unknown';
+    } else if(staircase){
+      label = '📈 Progression suspecte — un seul acteur probable';
+      cls = 'rug-badge-bad';
     } else if(analysis.badCount >= 3){
       label = '🚩 ' + analysis.badCount + ' signaux de rug détectés';
       cls = 'rug-badge-bad';
@@ -2136,9 +2168,24 @@ window.addEventListener('error', function(e){
     return (
       '<div class="shelf">' +
         '<div class="shelf-header"><span class="shelf-title">' + escapeHTML(title) + '</span><span class="shelf-caption">' + escapeHTML(caption) + '</span></div>' +
-        '<div class="shelf-row">' + pools.map(function(p){ return shelfCardHTML(p, showGradBar); }).join('') + '</div>' +
+        '<div class="shelf-row" data-shelf-id="' + escapeHTML(title) + '">' + pools.map(function(p){ return shelfCardHTML(p, showGradBar); }).join('') + '</div>' +
       '</div>'
     );
+  }
+
+  function captureShelfScrollPositions(){
+    const positions = {};
+    document.querySelectorAll('.shelf-row').forEach(function(row){
+      const id = row.dataset.shelfId;
+      if(id) positions[id] = row.scrollLeft;
+    });
+    return positions;
+  }
+  function restoreShelfScrollPositions(positions){
+    document.querySelectorAll('.shelf-row').forEach(function(row){
+      const id = row.dataset.shelfId;
+      if(id && positions[id]) row.scrollLeft = positions[id];
+    });
   }
 
   function renderBoardView(){
@@ -2162,6 +2209,7 @@ window.addEventListener('error', function(e){
       .slice(0, 10);
     state.boardJustGraduated = justGraduated;
 
+    const scrollPositions = captureShelfScrollPositions();
     els.list.innerHTML =
       paperSummaryStripHTML() +
       shelfHTML('🆕 Nouvelles paires', 'les plus récentes', newPools, false) +
@@ -2169,6 +2217,7 @@ window.addEventListener('error', function(e){
       shelfHTML('🚀 Vient de graduer', 'activité maintenue après migration', justGraduated, false) +
       shelfHTML('🔥 En tendance', 'les plus actifs', trendingPools, false) +
       '<div class="rug-disclaimer" style="padding:0 2px;">Colonne "Proche de graduer" : ne montre que les tokens entre 45k$ et 60k$ de capitalisation, une fourchette resserrée autour du seuil fixe de pump.fun (~69k$) — pour Raydium LaunchLab et Meteora DBC, le vrai seuil est configuré par le créateur et peut différer, donc ce %% reste indicatif, pas une vraie mesure de la bonding curve. Colonne "Vient de graduer" : ne détecte fiablement que les migrations depuis pump.fun vers PumpSwap (au moins 5 transactions et 500$ de volume sur la dernière heure) — Raydium LaunchLab et Meteora DBC migrent vers des pools génériques qu\'on ne peut pas distinguer d\'un pool classique, donc ces graduations-là n\'apparaissent pas ici.</div>';
+    restoreShelfScrollPositions(scrollPositions);
 
     if(!state.pools.new) refresh('new', true);
     if(!state.pools.trending) refresh('trending', true);
@@ -2335,6 +2384,7 @@ window.addEventListener('error', function(e){
         const sec = secKey ? state.securityCache[secKey] : null;
         if(!sec || sec.holderCount === null || sec.holderCount < f.minHolders) return false;
       }
+      if(f.excludeStaircase && isSuspiciousStaircase(p)) return false;
       if(f.platforms.size > 0 && !f.platforms.has(p.dexId)) return false;
       if(f.search){
         const q = f.search.toLowerCase();
@@ -2573,6 +2623,7 @@ window.addEventListener('error', function(e){
     els.fFdv.value = state.filters.maxFdv === null ? '' : String(state.filters.maxFdv);
     els.fBuys1h.value = state.filters.minBuys1h === null ? '' : String(state.filters.minBuys1h);
     els.fHolders.value = state.filters.minHolders === null ? '' : String(state.filters.minHolders);
+    els.fExcludeStaircase.checked = state.filters.excludeStaircase;
     els.fSort.value = state.sortBy;
     const wasOpen = els.sheet.classList.contains('open');
     els.backdrop.classList.add('open');
@@ -2597,10 +2648,11 @@ window.addEventListener('error', function(e){
   els.fFdv.addEventListener('change', function(e){ state.filters.maxFdv = e.target.value === '' ? null : parseInt(e.target.value, 10); render(); });
   els.fBuys1h.addEventListener('change', function(e){ state.filters.minBuys1h = e.target.value === '' ? null : parseInt(e.target.value, 10); render(); });
   els.fHolders.addEventListener('change', function(e){ state.filters.minHolders = e.target.value === '' ? null : parseInt(e.target.value, 10); render(); });
+  els.fExcludeStaircase.addEventListener('change', function(e){ state.filters.excludeStaircase = e.target.checked; render(); });
   els.fSort.addEventListener('change', function(e){ state.sortBy = e.target.value; render(); });
 
   els.fReset.addEventListener('click', function(){
-    state.filters = { search: '', minLiquidity: 0, minVolume: 0, minChange24h: null, maxAgeMinutes: null, minBuyPressure: null, maxFdv: null, minBuys1h: null, minHolders: null, platforms: new Set() };
+    state.filters = { search: '', minLiquidity: 0, minVolume: 0, minChange24h: null, maxAgeMinutes: null, minBuyPressure: null, maxFdv: null, minBuys1h: null, minHolders: null, excludeStaircase: false, platforms: new Set() };
     state.sortBy = 'new';
     openSheet();
     render();
