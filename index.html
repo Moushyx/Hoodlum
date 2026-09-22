@@ -369,14 +369,14 @@
   }
   .score-summary strong{ color:var(--text); }
   .rug-panel{ margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid var(--border); }
-  .socials-row{ display:flex; gap:8px; padding:12px 16px 0; }
+  .socials-row{ display:flex; gap:8px; padding:12px 16px; background:var(--surface-solid); }
   .social-link{
     flex:1; display:flex; align-items:center; justify-content:center; gap:5px;
     padding:8px; border-radius:10px; background:var(--surface); border:1px solid var(--border);
     color:var(--text); text-decoration:none; font-size:12px; font-weight:600;
   }
   .social-link.missing{ color:var(--text-muted); opacity:0.45; border-style:dashed; }
-  .socials-empty{ padding:12px 16px 0; font-size:11.5px; color:var(--text-muted); font-family:var(--mono); }
+  .socials-empty{ padding:12px 16px; background:var(--surface-solid); font-size:11.5px; color:var(--text-muted); font-family:var(--mono); }
   .rug-verdict{
     font-weight:800; font-size:20px; font-family:var(--mono);
     padding:12px; border-radius:10px; margin-bottom:10px; text-align:center;
@@ -467,7 +467,13 @@
   .check-pill.check-bad{ color:var(--red); border-color:rgba(251,113,133,0.5); background:rgba(251,113,133,0.08); }
   .check-pill.check-warn{ color:var(--yellow); border-color:rgba(251,191,36,0.5); }
   .check-pill.check-unknown{ color:var(--text-muted); }
-  .check-pill.check-link{ color:var(--purple); border-color:rgba(168,85,247,0.5); }
+  .bubblemaps-btn{
+    display:block; text-align:center; margin-top:10px;
+    padding:11px; border-radius:10px;
+    background:var(--surface-2); border:1px solid rgba(168,85,247,0.4);
+    color:var(--purple); text-decoration:none;
+    font-family:var(--display); font-weight:700; font-size:12.5px;
+  }
   .dev-tag{
     display:inline-block; margin-left:4px; padding:1px 5px; border-radius:5px;
     background:rgba(251,191,36,0.15); color:var(--yellow); font-size:9px; font-weight:800; vertical-align:middle;
@@ -1899,10 +1905,22 @@ window.addEventListener('error', function(e){
     return null;
   }
 
+  // GeckoTerminal's twitter_handle/telegram_handle fields are meant to be bare handles, but
+  // token metadata is creator-submitted and inconsistent — some tokens store a full URL there
+  // instead. Blindly prepending the platform's base URL to an already-complete URL produces a
+  // broken link (e.g. "https://x.com/https://x.com/realhandle"), which sends the user nowhere
+  // useful — exactly the "doesn't go to anything related to this token" symptom.
+  function socialHandleUrl(baseUrl, value){
+    if(!value) return null;
+    const trimmed = value.trim();
+    if(/^https?:\/\//i.test(trimmed)) return trimmed;
+    return baseUrl + trimmed.replace(/^@/, '');
+  }
+
   function socialsRowHTML(socials){
     const items = [
-      { label: '🐦 X/Twitter', url: (socials && socials.twitter) ? 'https://x.com/' + socials.twitter.replace(/^@/, '') : null },
-      { label: '📱 Telegram', url: (socials && socials.telegram) ? 'https://t.me/' + socials.telegram.replace(/^@/, '') : null },
+      { label: '🐦 X/Twitter', url: socialHandleUrl('https://x.com/', socials && socials.twitter) },
+      { label: '📱 Telegram', url: socialHandleUrl('https://t.me/', socials && socials.telegram) },
       { label: '🌐 Site', url: (socials && socials.website) || null }
     ];
     if(!items.some(function(it){ return it.url; })){
@@ -1916,7 +1934,6 @@ window.addEventListener('error', function(e){
   }
 
   function checkPillsHTML(pool, sec, network){
-    const bmUrl = bubblemapsUrl(network, pool.baseAddress);
     function pill(label, status){
       const icon = status === 'ok' ? '✓' : status === 'bad' ? '✗' : status === 'warn' ? '!' : '?';
       return '<div class="check-pill check-' + status + '"><span>' + icon + '</span><span>' + escapeHTML(label) + '</span></div>';
@@ -1933,8 +1950,13 @@ window.addEventListener('error', function(e){
       pills += pill('Honeypot', honeypotStatus);
     }
     pills += pill('Top 10', topStatus) + pill('Volume', volStatus);
-    if(bmUrl) pills += '<a class="check-pill check-link" href="' + escapeHTML(bmUrl) + '" target="_blank" rel="noopener"><span>🔗</span><span>Clusters</span></a>';
     return '<div class="check-row">' + pills + '</div>';
+  }
+
+  function bubblemapsButtonHTML(pool, network){
+    const bmUrl = bubblemapsUrl(network, pool.baseAddress);
+    if(!bmUrl) return '';
+    return '<a class="bubblemaps-btn" href="' + escapeHTML(bmUrl) + '" target="_blank" rel="noopener">🔗 Voir les clusters de wallets sur Bubblemaps ↗</a>';
   }
 
   function securityDetailRowsHTML(pool, sec, score, network){
@@ -1963,11 +1985,12 @@ window.addEventListener('error', function(e){
         '<div class="td-group-title">Analyse de sécurité</div>' +
         '<div class="rug-verdict rug-verdict-' + analysis.verdictCls + '">' + scoreBadge + '</div>' +
         checkPillsHTML(pool, sec, network) +
+        bubblemapsButtonHTML(pool, network) +
         '<button class="score-toggle" id="rug-toggle-btn" style="margin-top:10px;">Voir le détail complet ▾</button>' +
         '<div class="score-detail" id="rug-detail-body">' +
           '<div class="score-radar-wrap">' + radarSVG(score.parts) + '</div>' +
           securityDetailRowsHTML(pool, sec, score, network) +
-          '<div class="rug-disclaimer">Vérification de motifs connus, pas une prédiction. Un rug bien préparé peut cocher toutes ces cases — ceci réduit le risque évident, ne l\'annule pas. "Volume vs liquidité" et "Hausse initiale" repèrent des schémas de wash trading et de pump-and-dump ; "Liquidité (évolution)" ne peut détecter une chute que si tu observes le token depuis un moment — elle ne voit rien avant l\'ouverture de sa fiche. On ne lit pas encore la forme du graphique bougie par bougie (ça demanderait des requêtes en plus qu\'on n\'a pas les moyens de faire pour l\'instant). Le % de concentration ne détecte pas les wallets liés entre eux — touche "Clusters" ci-dessus pour vérifier ça sur Bubblemaps. Surveille aussi les ventes marquées <span class="dev-tag">DEV</span> dans l\'activité récente. Pas un conseil financier.</div>' +
+          '<div class="rug-disclaimer">Vérification de motifs connus, pas une prédiction. Un rug bien préparé peut cocher toutes ces cases — ceci réduit le risque évident, ne l\'annule pas. "Volume vs liquidité" et "Hausse initiale" repèrent des schémas de wash trading et de pump-and-dump ; "Liquidité (évolution)" ne peut détecter une chute que si tu observes le token depuis un moment — elle ne voit rien avant l\'ouverture de sa fiche. On ne lit pas encore la forme du graphique bougie par bougie (ça demanderait des requêtes en plus qu\'on n\'a pas les moyens de faire pour l\'instant). Le % de concentration ne détecte pas les wallets liés entre eux — utilise le bouton Bubblemaps ci-dessus pour vérifier ça. Surveille aussi les ventes marquées <span class="dev-tag">DEV</span> dans l\'activité récente. Pas un conseil financier.</div>' +
         '</div>' +
       '</div>'
     );
