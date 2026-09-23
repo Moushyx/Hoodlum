@@ -375,7 +375,7 @@
     font-size:12px; color:var(--text-muted); line-height:1.5;
   }
   .score-summary strong{ color:var(--text); }
-  .rug-panel{ margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid var(--border); }
+  .rug-panel{ margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid var(--border); }
   .socials-row{ display:flex; gap:8px; padding:12px 16px; background:var(--surface-solid); }
   .social-link{
     flex:1; display:flex; align-items:center; justify-content:center; gap:5px;
@@ -430,13 +430,13 @@
       radial-gradient(circle at 100% 0%, rgba(34,211,238,0.08), transparent 55%),
       var(--surface-solid);
   }
-  .token-detail-hero{ margin-bottom:16px; }
+  .token-detail-hero{ margin-bottom:10px; }
   .td-hero-mcap{ font-family:var(--mono); font-weight:800; font-size:28px; line-height:1.1; }
   .td-hero-mcap-label{ font-size:11px; color:var(--text-muted); margin-top:2px; margin-bottom:8px; }
   .td-hero-price-row{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
   .td-hero-price{ font-family:var(--mono); font-weight:700; font-size:15px; }
   .td-hero-native{ font-family:var(--mono); font-size:11.5px; color:var(--text-muted); }
-  .td-group{ margin-bottom:16px; }
+  .td-group{ margin-bottom:11px; }
   .td-group-title{
     font-family:var(--display); font-weight:700; font-size:11.5px;
     letter-spacing:0.03em; text-transform:uppercase;
@@ -457,8 +457,8 @@
     background:var(--surface); border:1px solid rgba(34,211,238,0.4); border-radius:10px;
     color:var(--cyan); font-family:var(--display); font-weight:700; font-size:12.5px; cursor:pointer;
   }
-  .tf-strip{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px; }
-  .stat-strip{ display:flex; border-top:1px solid var(--border); border-bottom:1px solid var(--border); padding:11px 0; margin:2px 0 16px; }
+  .tf-strip{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:2px; }
+  .stat-strip{ display:flex; border-top:1px solid var(--border); border-bottom:1px solid var(--border); padding:9px 0; margin:2px 0 11px; }
   .stat-cell{ flex:1; display:flex; flex-direction:column; gap:3px; padding:0 10px; border-left:1px solid var(--border); }
   .stat-cell:first-child{ border-left:none; padding-left:0; }
   .stat-label{ font-size:9.5px; color:var(--text-muted); font-family:var(--mono); text-transform:uppercase; letter-spacing:0.02em; }
@@ -579,7 +579,7 @@
   <div class="list" id="list"></div>
 
   <footer>
-    <p>Prix et pools via GeckoTerminal, contrôles de contrat via GoPlus Security (quand disponibles — le parsing des champs de sécurité côté Solana est fait au mieux, moins vérifié que côté Robinhood Chain). À but indicatif, pas un conseil financier ni un audit garanti. Les tokens tout juste créés n'ont souvent pas encore de données de sécurité — c'est normal, pas une erreur. Projet indépendant, sans lien avec Robinhood Markets, Inc.</p>
+    <p>Données GeckoTerminal + GoPlus, à titre indicatif — pas un conseil financier. Projet indépendant, sans lien avec Robinhood Markets, Inc.</p>
   </footer>
 
 </div>
@@ -1032,6 +1032,19 @@ window.addEventListener('error', function(e){
     return Math.abs(pool.change1h - pool.change6h) < 2;
   }
 
+  // A pool younger than an hour still has its whole trading history inside the "1h" transaction
+  // count. A brand-new token racking up dozens of transactions per minute, sustained, isn't a
+  // crowd of distinct organic buyers discovering it that fast — it's bots or wash trading
+  // manufacturing the appearance of activity to bait real buyers in.
+  const SUSPICIOUS_TX_PER_MIN = 40;
+  function isSuspiciousTxRate(pool){
+    const ageMin = pool.createdAt ? Math.max(0, Math.floor((Date.now() - pool.createdAt.getTime()) / 60000)) : null;
+    if(ageMin === null || ageMin > 60) return false;
+    const totalTx = (pool.txH1 && pool.txH1.buys || 0) + (pool.txH1 && pool.txH1.sells || 0);
+    if(totalTx === 0) return false;
+    return (totalTx / Math.max(ageMin, 1)) > SUSPICIOUS_TX_PER_MIN;
+  }
+
   function isBondingCurvePlatform(dexId){
     const d = (dexId || '').toLowerCase();
     // PumpSwap is pump.fun's POST-graduation AMM (already migrated) — it must never match here
@@ -1040,8 +1053,8 @@ window.addEventListener('error', function(e){
     if(d.indexOf('pumpswap') !== -1) return false;
     return d.indexOf('pump') !== -1 || d.indexOf('launchlab') !== -1 || d.indexOf('dbc') !== -1 || d.indexOf('bonding') !== -1;
   }
-  const GRADUATION_BAND_MIN = 45000;
-  const GRADUATION_BAND_MAX = 60000;
+  const GRADUATION_BAND_MIN = 35000;
+  const GRADUATION_BAND_MAX = 65000;
   function graduationPct(pool){
     if(!isBondingCurvePlatform(pool.dexId)) return null;
     const mcap = pool.marketCap !== null ? pool.marketCap : pool.fdv;
@@ -1750,6 +1763,16 @@ window.addEventListener('error', function(e){
         staircase ? 'Hausse ininterrompue depuis le lancement (1h et 6h quasi identiques) — signature typique d\'un seul acteur qui pousse le prix' : 'Pas de progression suspecte détectée');
     }
 
+    if(ageMinutes_ !== null && ageMinutes_ <= 60 && pool.txH1){
+      const totalTx1h = (pool.txH1.buys || 0) + (pool.txH1.sells || 0);
+      if(totalTx1h > 0){
+        const txRate = Math.round(totalTx1h / Math.max(ageMinutes_, 1));
+        const suspiciousRate = isSuspiciousTxRate(pool);
+        add('Rythme de transactions', suspiciousRate ? 'bad' : 'ok',
+          suspiciousRate ? '~' + txRate + ' tx/min depuis le lancement — rythme irréaliste pour de vrais acheteurs distincts' : '~' + txRate + ' tx/min, rythme plausible');
+      }
+    }
+
     if(!state.sessionLiquidityPeak) state.sessionLiquidityPeak = {};
     const liqKey_ = pool.network + ':' + pool.address;
     const prevPeak_ = state.sessionLiquidityPeak[liqKey_];
@@ -1840,6 +1863,10 @@ window.addEventListener('error', function(e){
       patternKnown = true;
       if(pool.change5m > 300 || pool.change1h > 500) pattern -= 35;
     }
+    if(ageMin !== null && ageMin <= 60 && pool.txH1 && ((pool.txH1.buys || 0) + (pool.txH1.sells || 0)) > 0){
+      patternKnown = true;
+      if(isSuspiciousTxRate(pool)) pattern -= 50;
+    }
     pattern = patternKnown ? Math.max(0, pattern) : null;
 
     const parts = { liq: liq, mint: mint, lp: lp, buy: buy, holders: holders, pattern: pattern };
@@ -1912,10 +1939,14 @@ window.addEventListener('error', function(e){
     const analysis = computeRugSignals(pool, sec, network);
     const known = analysis.signals.filter(function(s){ return s.status !== 'unknown'; }).length;
     const staircase = isSuspiciousStaircase(pool);
+    const suspiciousTxRate = isSuspiciousTxRate(pool);
     let label, cls;
     if(known === 0){
       label = '? Anti-rug : pas encore assez de données';
       cls = 'rug-badge-unknown';
+    } else if(suspiciousTxRate){
+      label = '🤖 Volume de transactions irréaliste pour l\'âge du token';
+      cls = 'rug-badge-bad';
     } else if(staircase){
       label = '📈 Progression suspecte — un seul acteur probable';
       cls = 'rug-badge-bad';
@@ -2030,7 +2061,7 @@ window.addEventListener('error', function(e){
         '<div class="score-detail" id="rug-detail-body">' +
           '<div class="score-radar-wrap">' + radarSVG(score.parts) + '</div>' +
           securityDetailRowsHTML(pool, sec, score, network) +
-          '<div class="rug-disclaimer">Vérification de motifs connus, pas une prédiction. Un rug bien préparé peut cocher toutes ces cases — ceci réduit le risque évident, ne l\'annule pas. "Volume vs liquidité" et "Hausse initiale" repèrent des schémas de wash trading et de pump-and-dump ; "Liquidité (évolution)" ne peut détecter une chute que si tu observes le token depuis un moment — elle ne voit rien avant l\'ouverture de sa fiche. On ne lit pas encore la forme du graphique bougie par bougie (ça demanderait des requêtes en plus qu\'on n\'a pas les moyens de faire pour l\'instant). Le % de concentration ne détecte pas les wallets liés entre eux — utilise le bouton Bubblemaps ci-dessus pour vérifier ça. Surveille aussi les ventes marquées <span class="dev-tag">DEV</span> dans l\'activité récente. Pas un conseil financier.</div>' +
+          '<div class="rug-disclaimer">Vérification de motifs connus, pas une garantie — un rug bien préparé peut cocher toutes ces cases. Pour les wallets liés entre eux, utilise Bubblemaps ci-dessus. Pas un conseil financier.</div>' +
         '</div>' +
       '</div>'
     );
@@ -2101,8 +2132,6 @@ window.addEventListener('error', function(e){
 
     return (
       '<div class="token-detail">' +
-        '<button class="score-toggle" id="detail-toggle-btn">Plus de détails sur le marché ▾</button>' +
-        '<div class="score-detail" id="detail-toggle-body">' +
           '<div class="td-group">' +
             '<div class="td-group-title">Activité (1h)</div>' +
             '<div class="buysell-bar"><span class="bs-buy" style="width:' + buyPct1h + '%;"></span><span class="bs-sell" style="width:' + (100 - buyPct1h) + '%;"></span></div>' +
@@ -2119,7 +2148,6 @@ window.addEventListener('error', function(e){
             { label: 'Âge', value: formatAge(pool.createdAt) },
             { label: 'Plateforme', value: formatPlatform(pool.dexId) }
           ]) +
-        '</div>' +
       '</div>'
     );
   }
@@ -2244,8 +2272,14 @@ window.addEventListener('error', function(e){
     const cats = state.boardCategories;
     const newPools = (state.pools.new || []).slice(0, 15);
     const trendingPools = (state.pools.trending || []).slice(0, 15);
-    const graduating = (state.pools.new || [])
-      .filter(function(p){ return graduationPct(p) !== null; })
+    const graduatingCandidates = [].concat(state.pools.new || [], state.pools.trending || []);
+    const seenGradIds = {};
+    const graduating = graduatingCandidates
+      .filter(function(p){
+        if(seenGradIds[p.network + ':' + p.address]) return false;
+        seenGradIds[p.network + ':' + p.address] = true;
+        return graduationPct(p) !== null;
+      })
       .sort(function(a, b){ return graduationPct(b) - graduationPct(a); })
       .slice(0, 15);
     state.boardGraduating = graduating;
@@ -2263,7 +2297,7 @@ window.addEventListener('error', function(e){
     if(!cats.new && !cats.graduating && !cats.justGraduated && !cats.trending){
       html += '<div class="empty">Choisis au moins une catégorie ci-dessus pour voir des tokens.</div>';
     }
-    html += '<div class="rug-disclaimer" style="padding:0 2px;">Colonne "Proche de graduer" : ne montre que les tokens entre 45k$ et 60k$ de capitalisation, une fourchette resserrée autour du seuil fixe de pump.fun (~69k$) — pour Raydium LaunchLab et Meteora DBC, le vrai seuil est configuré par le créateur et peut différer, donc ce %% reste indicatif, pas une vraie mesure de la bonding curve. Colonne "Vient de graduer" : ne détecte fiablement que les migrations depuis pump.fun vers PumpSwap (au moins 5 transactions et 500$ de volume sur la dernière heure) — Raydium LaunchLab et Meteora DBC migrent vers des pools génériques qu\'on ne peut pas distinguer d\'un pool classique, donc ces graduations-là n\'apparaissent pas ici.</div>';
+    html += '<div class="rug-disclaimer" style="padding:0 2px;">"Proche de graduer" et "Vient de graduer" : estimations pump.fun/PumpSwap uniquement — Raydium LaunchLab et Meteora DBC ne sont pas détectables de la même façon.</div>';
     els.list.innerHTML = html;
 
     if(!state.pools.new) refresh('new', true);
@@ -2880,7 +2914,7 @@ window.addEventListener('error', function(e){
 
   function loadChart(pool){
     const chartUrl = 'https://www.geckoterminal.com/' + pool.network + '/pools/' + pool.address +
-      '?embed=1&info=0&swaps=0&light_chart=0&chart_type=price&resolution=' + resolutionFor(state.chartTimeframe) + '&bg_color=0A0A10';
+      '?embed=1&info=0&swaps=0&light_chart=0&chart_type=market_cap&resolution=' + resolutionFor(state.chartTimeframe) + '&bg_color=0A0A10';
     els.chartLoading.classList.remove('hidden');
     els.chartLoading.textContent = 'Chargement du graphique…';
     els.chartModalIframe.onload = function(){ els.chartLoading.classList.add('hidden'); clearTimeout(state._chartLoadTimeout); };
@@ -2979,6 +3013,11 @@ window.addEventListener('error', function(e){
   function openChartModal(pool){
     state.lastModalPrice = undefined;
     state.lastModalMcap = undefined;
+    clearTimeout(state._chartLoadTimeout);
+    clearTimeout(state._tradesLoadTimeout);
+    clearInterval(state._chartPriceInterval);
+    clearInterval(state._chartTradesInterval);
+    clearInterval(state._chartFullInterval);
     if(!state.chartModalOpen) lockBodyScroll();
     state.chartModalOpen = true;
     els.chartModalScroll.scrollTop = 0;
@@ -2992,7 +3031,14 @@ window.addEventListener('error', function(e){
 
     document.getElementById('trades-feed-wrap').innerHTML = tradesFeedShellHTML();
     state.seenTradeHashes = new Set();
+    clearTimeout(state._tradesLoadTimeout);
+    state._tradesLoadTimeout = setTimeout(function(){
+      const emptyMsg = document.getElementById('trades-empty-msg');
+      if(emptyMsg) emptyMsg.textContent = 'Pas encore de transaction indexée pour ce token — normal s\'il vient tout juste d\'être créé.';
+    }, 8000);
     fetchTrades(network, address).then(function(trades){
+      clearTimeout(state._tradesLoadTimeout);
+      if(!state.currentModalPool || state.currentModalPool.network !== network || state.currentModalPool.address !== address) return;
       appendTradeRows(trades, pool.baseAddress);
     });
 
@@ -3048,21 +3094,14 @@ window.addEventListener('error', function(e){
         const secKey = full.baseAddress ? network + ':' + full.baseAddress.toLowerCase() : '';
         const freshSec = secKey ? state.securityCache[secKey] : null;
         const belowWrap = document.getElementById('token-detail-below-wrap');
-        if(belowWrap){
-          const wasOpen = !!document.getElementById('detail-toggle-body') && document.getElementById('detail-toggle-body').classList.contains('open');
-          belowWrap.innerHTML = tokenDetailBelowHTML(full, freshSec);
-          if(wasOpen){
-            document.getElementById('detail-toggle-body').classList.add('open');
-            document.getElementById('detail-toggle-btn').textContent = 'Masquer ▲';
-          }
-          wireToggle('detail-toggle-btn', 'detail-toggle-body', 'Masquer ▲', 'Plus de détails sur le marché ▾');
-        }
+        if(belowWrap) belowWrap.innerHTML = tokenDetailBelowHTML(full, freshSec);
       });
     }, 8000);
 
     state._chartTradesInterval = setInterval(function(){
       fetchTrades(network, address).then(function(trades){
-        appendTradeRows(trades, state.currentModalPool ? state.currentModalPool.baseAddress : pool.baseAddress);
+        if(!state.currentModalPool || state.currentModalPool.network !== network || state.currentModalPool.address !== address) return;
+        appendTradeRows(trades, state.currentModalPool.baseAddress);
       });
     }, 3000);
   }
@@ -3126,7 +3165,6 @@ window.addEventListener('error', function(e){
     wireToggle('rug-toggle-btn', 'rug-detail-body', 'Masquer ▲', 'Voir le détail complet ▾');
     document.getElementById('token-detail-wrap').innerHTML = tokenDetailTopHTML(pool, sec);
     document.getElementById('token-detail-below-wrap').innerHTML = tokenDetailBelowHTML(pool, sec);
-    wireToggle('detail-toggle-btn', 'detail-toggle-body', 'Masquer ▲', 'Plus de détails sur le marché ▾');
     openChartModal(pool);
   }
 
