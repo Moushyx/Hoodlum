@@ -2690,7 +2690,14 @@ window.addEventListener('error', function(e){
         if(state.watchlistPools === null) refreshWatchlist(false);
       } else if(state.tab === 'paper'){
         refreshPaper(false);
-      } else if(state.tab !== 'board' && !state.pools[state.tab]){
+      } else if(state.tab === 'board'){
+        // The board always wants the freshest page 1, never whatever page the Nouvelles
+        // paires/Tendance tabs were last left paginated to (they share the same cache).
+        state.page.new = 1;
+        state.page.trending = 1;
+        refresh('new', false);
+        refresh('trending', false);
+      } else if(!state.pools[state.tab]){
         refresh(state.tab, false);
       }
     });
@@ -2699,7 +2706,7 @@ window.addEventListener('error', function(e){
   els.refreshBtn.addEventListener('click', function(){
     if(state.tab === 'watchlist') refreshWatchlist(false);
     else if(state.tab === 'paper') refreshPaper(false);
-    else if(state.tab === 'board'){ refresh('new', false); refresh('trending', false); }
+    else if(state.tab === 'board'){ state.page.new = 1; state.page.trending = 1; refresh('new', false); refresh('trending', false); }
     else refresh(state.tab, false);
   });
 
@@ -3356,7 +3363,7 @@ window.addEventListener('error', function(e){
     if(document.visibilityState === 'visible' && !state.chartModalOpen){
       if(state.tab === 'watchlist') refreshWatchlist(true);
       else if(state.tab === 'paper') refreshPaper(true);
-      else if(state.tab === 'board'){ refresh('new', true); refresh('trending', true); }
+      else if(state.tab === 'board'){ state.page.new = 1; state.page.trending = 1; refresh('new', true); refresh('trending', true); }
       else refresh(state.tab, true);
     }
   }, REFRESH_MS);
@@ -3456,7 +3463,7 @@ window.addEventListener('error', function(e){
         };
         if(state.tab === 'watchlist') refreshWatchlist(false);
         else if(state.tab === 'paper') refreshPaper(false);
-        else if(state.tab === 'board'){ refresh('new', false); refresh('trending', false); }
+        else if(state.tab === 'board'){ state.page.new = 1; state.page.trending = 1; refresh('new', false); refresh('trending', false); }
         else refresh(state.tab, false);
         setTimeout(done, 1000);
       } else {
