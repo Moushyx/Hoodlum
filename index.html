@@ -236,6 +236,12 @@
   }
   .sim-strip-pnl{ margin-left:auto; font-family:var(--mono); font-weight:800; }
   .sim-strip-arrow{ font-size:15px; opacity:0.7; }
+  .board-cat-row{ display:flex; gap:7px; flex-wrap:wrap; padding:0 2px 16px; }
+  .board-cat-chip{
+    padding:8px 13px; border-radius:20px; font-size:12.5px; font-weight:700;
+    border:1px solid var(--border); background:var(--surface); color:var(--text-muted); cursor:pointer;
+  }
+  .board-cat-chip.active{ background:var(--gradient); color:#0A0A10; border-color:transparent; }
   .shelf{ margin-bottom:20px; }
   .shelf-header{ display:flex; align-items:baseline; justify-content:space-between; padding:0 2px 8px; }
   .shelf-title{ font-weight:700; font-size:15px; }
@@ -249,6 +255,7 @@
   .shelf-card:active{ background:var(--surface-2); }
   .shelf-card-top{ display:flex; align-items:center; gap:7px; margin-bottom:7px; }
   .shelf-pair{ font-weight:700; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
+  .shelf-age{ font-family:var(--mono); font-size:9.5px; color:var(--cyan); flex:0 0 auto; }
   .shelf-price{ font-family:var(--mono); font-size:11px; color:var(--text-muted); }
   .shelf-meta{ font-family:var(--mono); font-size:10px; color:var(--text-muted); margin-top:4px; }
   .shelf-empty{ padding:14px; color:var(--text-muted); font-size:12px; text-align:center; }
@@ -888,6 +895,7 @@ window.addEventListener('error', function(e){
     imageCache: {},
     securityCache: {},
     socialsCache: {},
+    boardCategories: { new: true, graduating: true, justGraduated: true, trending: true },
     seenIds: {},
     sheetOpen: false,
     watchlist: loadJSON('hoodlum_watchlist', []),
@@ -2147,13 +2155,27 @@ window.addEventListener('error', function(e){
       '<span class="sim-strip-arrow">→</span></div>';
   }
 
+  function formatLiveAge(createdAt){
+    if(!createdAt) return '—';
+    const s = Math.max(0, Math.floor((Date.now() - createdAt.getTime()) / 1000));
+    if(s < 60) return s + 's';
+    const m = Math.floor(s / 60);
+    if(m < 60) return m + 'm ' + String(s % 60).padStart(2, '0') + 's';
+    const h = Math.floor(m / 60);
+    if(h < 24) return h + 'h ' + String(m % 60).padStart(2, '0') + 'm';
+    return Math.floor(h / 24) + 'j';
+  }
+
   function shelfCardHTML(pool, showGradBar){
     const changeCls = pool.change24h >= 0 ? 'pos' : 'neg';
     const changeSign = pool.change24h >= 0 ? '+' : '';
     const gp = showGradBar ? graduationPct(pool) : null;
+    const ageAttr = pool.createdAt ? ' data-created-at="' + pool.createdAt.getTime() + '"' : '';
     return (
       '<div class="shelf-card" data-network="' + escapeHTML(pool.network) + '" data-address="' + escapeHTML(pool.address) + '" data-pair="' + escapeHTML(pool.base) + ' / ' + escapeHTML(pool.quote) + '">' +
-        '<div class="shelf-card-top">' + avatarHTML(pool) + '<span class="shelf-pair">' + escapeHTML(pool.base) + '</span></div>' +
+        '<div class="shelf-card-top">' + avatarHTML(pool) + '<span class="shelf-pair">' + escapeHTML(pool.base) + '</span>' +
+          (pool.createdAt ? '<span class="shelf-age"' + ageAttr + '>' + formatLiveAge(pool.createdAt) + '</span>' : '') +
+        '</div>' +
         '<div class="shelf-price">$' + formatPrice(pool.priceUsd) + ' <span class="change ' + changeCls + '" style="font-size:10px;padding:1px 4px;">' + changeSign + pool.change24h.toFixed(1) + '%</span></div>' +
         '<div class="shelf-meta">MC ' + formatUSD(pool.marketCap !== null ? pool.marketCap : pool.fdv) + '</div>' +
         (gp !== null ? '<div class="grad-bar"><div class="grad-bar-fill" style="width:' + gp + '%;"></div></div><div class="shelf-meta">' + gp + '% (estimé)</div>' : '') +
@@ -2188,6 +2210,29 @@ window.addEventListener('error', function(e){
     });
   }
 
+  function boardCategoryChipsHTML(){
+    const defs = [
+      { key: 'new', label: '🆕 Nouvelles' },
+      { key: 'graduating', label: '🎓 Proche de graduer' },
+      { key: 'justGraduated', label: '🚀 Vient de graduer' },
+      { key: 'trending', label: '🔥 Tendance' }
+    ];
+    return '<div class="board-cat-row">' + defs.map(function(d){
+      const active = !!state.boardCategories[d.key];
+      return '<button class="board-cat-chip' + (active ? ' active' : '') + '" data-board-cat="' + d.key + '">' + d.label + '</button>';
+    }).join('') + '</div>';
+  }
+
+  function boardSectionHTML(title, caption, pools){
+    const header = '<div class="shelf-header" style="padding:0 2px;"><span class="shelf-title">' + escapeHTML(title) + '</span><span class="shelf-caption">' + escapeHTML(caption) + '</span></div>';
+    if(!pools || pools.length === 0){
+      return '<div class="shelf">' + header + '<div class="shelf-empty">Rien à afficher ici pour l\'instant.</div></div>';
+    }
+    return '<div class="shelf">' + header +
+      '<div class="list" style="padding:0;">' + pools.map(function(p){ return rowHTML(p, false); }).join('') + '</div>' +
+    '</div>';
+  }
+
   function renderBoardView(){
     document.getElementById('network-row').style.display = '';
     els.platformRow.style.display = 'none';
@@ -2196,28 +2241,30 @@ window.addEventListener('error', function(e){
     els.status.textContent = '';
     els.updatedAt.textContent = '—';
 
-    const newPools = (state.pools.new || []).slice(0, 10);
-    const trendingPools = (state.pools.trending || []).slice(0, 10);
+    const cats = state.boardCategories;
+    const newPools = (state.pools.new || []).slice(0, 15);
+    const trendingPools = (state.pools.trending || []).slice(0, 15);
     const graduating = (state.pools.new || [])
       .filter(function(p){ return graduationPct(p) !== null; })
       .sort(function(a, b){ return graduationPct(b) - graduationPct(a); })
-      .slice(0, 10);
+      .slice(0, 15);
     state.boardGraduating = graduating;
     const justGraduated = (state.pools.new || [])
       .filter(justGraduatedWithActivity)
       .sort(function(a, b){ return b.volume1h - a.volume1h; })
-      .slice(0, 10);
+      .slice(0, 15);
     state.boardJustGraduated = justGraduated;
 
-    const scrollPositions = captureShelfScrollPositions();
-    els.list.innerHTML =
-      paperSummaryStripHTML() +
-      shelfHTML('🆕 Nouvelles paires', 'les plus récentes', newPools, false) +
-      shelfHTML('🎓 Proche de graduer', 'estimation, voir note ci-dessous', graduating, true) +
-      shelfHTML('🚀 Vient de graduer', 'activité maintenue après migration', justGraduated, false) +
-      shelfHTML('🔥 En tendance', 'les plus actifs', trendingPools, false) +
-      '<div class="rug-disclaimer" style="padding:0 2px;">Colonne "Proche de graduer" : ne montre que les tokens entre 45k$ et 60k$ de capitalisation, une fourchette resserrée autour du seuil fixe de pump.fun (~69k$) — pour Raydium LaunchLab et Meteora DBC, le vrai seuil est configuré par le créateur et peut différer, donc ce %% reste indicatif, pas une vraie mesure de la bonding curve. Colonne "Vient de graduer" : ne détecte fiablement que les migrations depuis pump.fun vers PumpSwap (au moins 5 transactions et 500$ de volume sur la dernière heure) — Raydium LaunchLab et Meteora DBC migrent vers des pools génériques qu\'on ne peut pas distinguer d\'un pool classique, donc ces graduations-là n\'apparaissent pas ici.</div>';
-    restoreShelfScrollPositions(scrollPositions);
+    let html = paperSummaryStripHTML() + boardCategoryChipsHTML();
+    if(cats.new) html += boardSectionHTML('🆕 Nouvelles paires', 'les plus récentes', newPools);
+    if(cats.graduating) html += boardSectionHTML('🎓 Proche de graduer', 'estimation, voir note ci-dessous', graduating);
+    if(cats.justGraduated) html += boardSectionHTML('🚀 Vient de graduer', 'activité maintenue après migration', justGraduated);
+    if(cats.trending) html += boardSectionHTML('🔥 En tendance', 'les plus actifs', trendingPools);
+    if(!cats.new && !cats.graduating && !cats.justGraduated && !cats.trending){
+      html += '<div class="empty">Choisis au moins une catégorie ci-dessus pour voir des tokens.</div>';
+    }
+    html += '<div class="rug-disclaimer" style="padding:0 2px;">Colonne "Proche de graduer" : ne montre que les tokens entre 45k$ et 60k$ de capitalisation, une fourchette resserrée autour du seuil fixe de pump.fun (~69k$) — pour Raydium LaunchLab et Meteora DBC, le vrai seuil est configuré par le créateur et peut différer, donc ce %% reste indicatif, pas une vraie mesure de la bonding curve. Colonne "Vient de graduer" : ne détecte fiablement que les migrations depuis pump.fun vers PumpSwap (au moins 5 transactions et 500$ de volume sur la dernière heure) — Raydium LaunchLab et Meteora DBC migrent vers des pools génériques qu\'on ne peut pas distinguer d\'un pool classique, donc ces graduations-là n\'apparaissent pas ici.</div>';
+    els.list.innerHTML = html;
 
     if(!state.pools.new) refresh('new', true);
     if(!state.pools.trending) refresh('trending', true);
@@ -2248,6 +2295,15 @@ window.addEventListener('error', function(e){
     }
     metaBits.push(formatAge(pool.createdAt));
 
+    // Numeric detail the badge above only summarizes as pass/fail — the actual magnitude
+    // (how many holders, how concentrated) is new information, not a repeat of it.
+    const secBits = [];
+    if(sec){
+      if(sec.holderCount !== null) secBits.push('👥 ' + sec.holderCount);
+      if(sec.creatorPct !== null) secBits.push('Dev ' + sec.creatorPct + '%');
+      if(sec.topHolderPct !== null) secBits.push('Top10 ' + sec.topHolderPct + '%');
+    }
+
     return (
       '<div class="row risk-accent-' + risk.cls.replace('risk-', '') + (isNew ? ' just-in' : '') + '" data-pool-id="' + escapeHTML(pool.id) + '" data-network="' + escapeHTML(pool.network) + '" data-address="' + escapeHTML(pool.address) + '" data-base-address="' + escapeHTML(pool.baseAddress) + '" data-pair="' + escapeHTML(pool.base) + ' / ' + escapeHTML(pool.quote) + '">' +
         '<div class="row-top">' +
@@ -2267,6 +2323,7 @@ window.addEventListener('error', function(e){
           '</div>' +
         '</div>' +
         rugBadgeHTML(pool, sec, pool.network) +
+        (secBits.length > 0 ? '<div class="meta" style="margin-top:6px;">' + secBits.join(' · ') + '</div>' : '') +
         '<div class="row-tags">' +
           '<span class="tag network">' + escapeHTML(NETWORKS[pool.network] ? NETWORKS[pool.network].label : pool.network) + '</span>' +
           '<span class="tag platform" style="color:' + hashColor(pool.dexId || 'x') + ';border-color:' + hashColor(pool.dexId || 'x') + '66;">' + escapeHTML(formatPlatform(pool.dexId)) + '</span>' +
@@ -3123,6 +3180,13 @@ window.addEventListener('error', function(e){
       render();
       return;
     }
+    const boardCatChip = e.target.closest('.board-cat-chip');
+    if(boardCatChip){
+      const cat = boardCatChip.dataset.boardCat;
+      state.boardCategories[cat] = !state.boardCategories[cat];
+      render();
+      return;
+    }
     const shelfCard = e.target.closest('.shelf-card');
     if(shelfCard){
       const combined = [].concat(state.pools.new || [], state.pools.trending || [], state.boardGraduating || [], state.boardJustGraduated || []);
@@ -3134,7 +3198,10 @@ window.addEventListener('error', function(e){
     if(!row) return;
     const address = row.dataset.address;
     if(!address) return;
-    const pool = (state.tab === 'watchlist' ? state.watchlistPools : state.pools[state.tab]).find(function(p){ return p.address === address && p.network === row.dataset.network; });
+    const poolsSource = state.tab === 'watchlist' ? state.watchlistPools
+      : state.tab === 'board' ? [].concat(state.pools.new || [], state.pools.trending || [], state.boardGraduating || [], state.boardJustGraduated || [])
+      : state.pools[state.tab];
+    const pool = (poolsSource || []).find(function(p){ return p.address === address && p.network === row.dataset.network; });
     if(!pool) return;
     openTokenModal(pool);
   });
@@ -3444,6 +3511,13 @@ window.addEventListener('error', function(e){
       });
     }
   })();
+
+  setInterval(function(){
+    if(state.tab !== 'board' || document.visibilityState !== 'visible') return;
+    document.querySelectorAll('.shelf-age[data-created-at]').forEach(function(el){
+      el.textContent = formatLiveAge(new Date(parseInt(el.dataset.createdAt, 10)));
+    });
+  }, 1000);
 
   refreshAlertBadge();
   refresh('trending', false);
