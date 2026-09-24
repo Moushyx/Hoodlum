@@ -2304,8 +2304,11 @@ window.addEventListener('error', function(e){
     els.updatedAt.textContent = '—';
 
     const cats = state.boardCategories;
-    const newPools = (state.pools.new || []).slice(0, 15);
-    const trendingPools = (state.pools.trending || []).slice(0, 15);
+    // No artificial truncation here — show everything actually fetched. Capping this to a small
+    // number meant a token could scroll off the bottom of the *underlying data* (not just off
+    // screen) the moment a newer one arrived, with no way to scroll back down and find it again.
+    const newPools = state.pools.new || [];
+    const trendingPools = state.pools.trending || [];
     const graduatingCandidates = [].concat(state.pools.new || [], state.pools.trending || []);
     const seenGradIds = {};
     const graduating = graduatingCandidates
@@ -2315,12 +2318,12 @@ window.addEventListener('error', function(e){
         return graduationPct(p) !== null;
       })
       .sort(function(a, b){ return graduationPct(b) - graduationPct(a); })
-      .slice(0, 15);
+      .slice(0, 30);
     state.boardGraduating = graduating;
     const justGraduated = (state.pools.new || [])
       .filter(justGraduatedWithActivity)
       .sort(function(a, b){ return b.volume1h - a.volume1h; })
-      .slice(0, 15);
+      .slice(0, 30);
     state.boardJustGraduated = justGraduated;
 
     let html = paperSummaryStripHTML() + boardCategoryChipsHTML();
