@@ -583,9 +583,7 @@
   </div>
 
   <div class="tabs" id="tab-row">
-    <button class="tab" data-tab="board">📊 Vue d'ensemble</button>
-    <button class="tab active" data-tab="trending">En tendance</button>
-    <button class="tab" data-tab="new">Nouvelles paires</button>
+    <button class="tab active" data-tab="board">📊 Vue d'ensemble</button>
     <button class="tab" data-tab="watchlist">★ Watchlist</button>
     <button class="tab" data-tab="paper">💰 Simulation<span class="tab-badge" id="paper-tab-badge" style="display:none;"></span></button>
   </div>
@@ -899,7 +897,7 @@ window.addEventListener('error', function(e){
 
   const state = {
     network: 'robinhood',
-    tab: 'trending',
+    tab: 'board',
     page: { trending: 1, new: 1 },
     pools: { trending: null, new: null },
     rawCount: { trending: null, new: null },
@@ -3421,6 +3419,12 @@ window.addEventListener('error', function(e){
       fastMergePrices(pools, na, applyFreshPoolFields).then(function(touched){
         if(touched){ state.preserveOrder = true; render(); }
       });
+    } else if(tab === 'board'){
+      const merged = [].concat(state.pools.new || [], state.pools.trending || []);
+      if(merged.length === 0) return;
+      fastMergePrices(merged, na, applyFreshPoolFields).then(function(touched){
+        if(touched) render();
+      });
     } else if(tab === 'watchlist'){
       const pools = state.watchlistPools;
       if(!pools || pools.length === 0) return;
@@ -3608,6 +3612,7 @@ window.addEventListener('error', function(e){
   }, 1000);
 
   refreshAlertBadge();
+  refresh('new', false);
   refresh('trending', false);
 })();
 </script>
