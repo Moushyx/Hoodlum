@@ -237,6 +237,23 @@
   .sim-strip-pnl{ margin-left:auto; font-family:var(--mono); font-weight:800; }
   .sim-strip-arrow{ font-size:15px; opacity:0.7; }
   .board-cat-row{ display:flex; gap:7px; flex-wrap:wrap; padding:0 2px 16px; }
+  .board-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .board-compact-card{
+    background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--border);
+    border-radius:12px; padding:10px; cursor:pointer; min-width:0;
+  }
+  .board-compact-card:active{ background:var(--surface-2); }
+  .board-compact-card.risk-accent-high{ border-left-color:var(--red); }
+  .board-compact-card.risk-accent-mid{ border-left-color:var(--yellow); }
+  .board-compact-card.risk-accent-low{ border-left-color:var(--green); }
+  .bcc-top{ display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+  .bcc-top .avatar, .bcc-top .avatar-fallback{ width:22px; height:22px; font-size:10px; }
+  .bcc-name{ font-weight:700; font-size:12px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bcc-rug-icon{ font-size:11px; flex:0 0 auto; }
+  .bcc-rug-icon.bcc-rug-bad{ filter:none; }
+  .bcc-price-row{ display:flex; align-items:center; gap:5px; margin-bottom:4px; flex-wrap:wrap; }
+  .bcc-price{ font-family:var(--mono); font-size:10.5px; color:var(--text-muted); }
+  .bcc-meta{ font-family:var(--mono); font-size:9px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .board-cat-chip{
     padding:8px 13px; border-radius:20px; font-size:12.5px; font-weight:700;
     border:1px solid var(--border); background:var(--surface); color:var(--text-muted); cursor:pointer;
@@ -857,7 +874,7 @@ window.addEventListener('error', function(e){
   const GT_BASE = 'https://api.geckoterminal.com/api/v2';
   const GOPLUS_EVM_BASE = 'https://api.gopluslabs.io/api/v1/token_security';
   const GOPLUS_SOLANA_URL = 'https://api.gopluslabs.io/api/v1/solana/token_security';
-  const REFRESH_MS = 12000;
+  const REFRESH_MS = 8000;
   const PALETTE = ['#A855F7', '#22D3EE', '#F472B6', '#34D399', '#FBBF24', '#818CF8'];
 
   // --- Compte & synchronisation cloud (Supabase) ---
@@ -2251,13 +2268,32 @@ window.addEventListener('error', function(e){
     }).join('') + '</div>';
   }
 
+  function boardCompactCardHTML(pool){
+    const secKey = pool.baseAddress ? pool.network + ':' + pool.baseAddress.toLowerCase() : '';
+    const sec = secKey ? state.securityCache[secKey] : null;
+    const risk = riskBadge(pool.liquidity);
+    const changeCls = pool.change24h >= 0 ? 'pos' : 'neg';
+    const changeSign = pool.change24h >= 0 ? '+' : '';
+    const analysis = computeRugSignals(pool, sec, pool.network);
+    const flagged = isSuspiciousStaircase(pool) || isSuspiciousTxRate(pool) || analysis.badCount >= 1;
+    const rugIcon = flagged ? '⚠️' : (analysis.signals.filter(function(s){ return s.status !== 'unknown'; }).length === 0 ? '?' : '✓');
+    const rugCls = flagged ? 'bad' : 'ok';
+    return (
+      '<div class="board-compact-card risk-accent-' + risk.cls.replace('risk-', '') + '" data-network="' + escapeHTML(pool.network) + '" data-address="' + escapeHTML(pool.address) + '" data-pair="' + escapeHTML(pool.base) + ' / ' + escapeHTML(pool.quote) + '">' +
+        '<div class="bcc-top">' + avatarHTML(pool) + '<span class="bcc-name">' + escapeHTML(pool.base) + '</span><span class="bcc-rug-icon bcc-rug-' + rugCls + '">' + rugIcon + '</span></div>' +
+        '<div class="bcc-price-row"><span class="bcc-price">$' + formatPrice(pool.priceUsd) + '</span><span class="change ' + changeCls + '" style="font-size:9.5px;padding:1px 4px;">' + changeSign + pool.change24h.toFixed(1) + '%</span></div>' +
+        '<div class="bcc-meta">MC ' + formatUSD(pool.marketCap !== null ? pool.marketCap : pool.fdv) + ' · ' + formatAge(pool.createdAt) + '</div>' +
+      '</div>'
+    );
+  }
+
   function boardSectionHTML(title, caption, pools){
     const header = '<div class="shelf-header" style="padding:0 2px;"><span class="shelf-title">' + escapeHTML(title) + '</span><span class="shelf-caption">' + escapeHTML(caption) + '</span></div>';
     if(!pools || pools.length === 0){
       return '<div class="shelf">' + header + '<div class="shelf-empty">Rien à afficher ici pour l\'instant.</div></div>';
     }
     return '<div class="shelf">' + header +
-      '<div class="list" style="padding:0;">' + pools.map(function(p){ return rowHTML(p, false); }).join('') + '</div>' +
+      '<div class="board-grid">' + pools.map(boardCompactCardHTML).join('') + '</div>' +
     '</div>';
   }
 
@@ -3230,6 +3266,13 @@ window.addEventListener('error', function(e){
       const cat = boardCatChip.dataset.boardCat;
       state.boardCategories[cat] = !state.boardCategories[cat];
       render();
+      return;
+    }
+    const boardCard = e.target.closest('.board-compact-card');
+    if(boardCard){
+      const combined = [].concat(state.pools.new || [], state.pools.trending || [], state.boardGraduating || [], state.boardJustGraduated || []);
+      const found = combined.find(function(p){ return p.address === boardCard.dataset.address && p.network === boardCard.dataset.network; });
+      if(found) openTokenModal(found);
       return;
     }
     const shelfCard = e.target.closest('.shelf-card');
