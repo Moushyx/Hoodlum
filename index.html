@@ -901,8 +901,21 @@ window.addEventListener('error', function(e){
     try{ localStorage.setItem(key, JSON.stringify(value)); }catch(err){ /* storage unavailable, ignore */ }
   }
 
+  const DEFAULT_FILTERS = { search: '', minLiquidity: 0, minVolume: 0, minChange24h: null, maxAgeMinutes: null, minBuyPressure: null, maxFdv: null, minBuys1h: null, minHolders: null, excludeStaircase: false };
+  function loadFilters(){
+    const saved = loadJSON('hoodlum_filters', null);
+    if(!saved) return Object.assign({}, DEFAULT_FILTERS, { platforms: new Set() });
+    return Object.assign({}, DEFAULT_FILTERS, saved, { platforms: new Set(saved.platforms || []) });
+  }
+  function saveFilters(filters){
+    const toSave = Object.assign({}, DEFAULT_FILTERS);
+    Object.keys(DEFAULT_FILTERS).forEach(function(k){ toSave[k] = filters[k]; });
+    toSave.platforms = Array.from(filters.platforms);
+    saveJSON('hoodlum_filters', toSave);
+  }
+
   const state = {
-    network: 'robinhood',
+    network: loadJSON('hoodlum_network', 'robinhood'),
     tab: 'board',
     page: { trending: 1, new: 1 },
     pools: { trending: null, new: null },
@@ -912,11 +925,11 @@ window.addEventListener('error', function(e){
     loading: false,
     refreshingByTab: {},
     sortBy: 'new',
-    filters: { search: '', minLiquidity: 0, minVolume: 0, minChange24h: null, maxAgeMinutes: null, minBuyPressure: null, maxFdv: null, minBuys1h: null, minHolders: null, excludeStaircase: false, platforms: new Set() },
+    filters: loadFilters(),
     imageCache: {},
     securityCache: {},
     socialsCache: {},
-    boardCategories: { new: true, graduating: true, justGraduated: true, trending: true },
+    boardCategories: loadJSON('hoodlum_board_categories', { new: true, graduating: true, justGraduated: true, trending: true }),
     boardAccumulated: { new: [], trending: [] },
     boardNextPage: { new: 2, trending: 2 },
     boardLoadingMore: { new: false, trending: false },
@@ -1721,6 +1734,7 @@ window.addEventListener('error', function(e){
   function switchNetwork(net){
     if(state.network === net) return;
     state.network = net;
+    saveJSON('hoodlum_network', net);
     state.pools = { trending: null, new: null };
     state.rawCount = { trending: null, new: null };
     state.error = { trending: null, new: null };
@@ -2850,10 +2864,14 @@ window.addEventListener('error', function(e){
   els.fReset.addEventListener('click', function(){
     state.filters = { search: '', minLiquidity: 0, minVolume: 0, minChange24h: null, maxAgeMinutes: null, minBuyPressure: null, maxFdv: null, minBuys1h: null, minHolders: null, excludeStaircase: false, platforms: new Set() };
     state.sortBy = 'new';
+    saveFilters(state.filters);
     openSheet();
     render();
   });
-  els.fApply.addEventListener('click', closeSheet);
+  els.fApply.addEventListener('click', function(){
+    saveFilters(state.filters);
+    closeSheet();
+  });
 
   // filter presets
   state.filterPresets = loadJSON('hoodlum_presets', []);
@@ -3327,6 +3345,7 @@ window.addEventListener('error', function(e){
     if(boardCatChip){
       const cat = boardCatChip.dataset.boardCat;
       state.boardCategories[cat] = !state.boardCategories[cat];
+      saveJSON('hoodlum_board_categories', state.boardCategories);
       render();
       return;
     }
