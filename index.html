@@ -889,7 +889,7 @@ window.addEventListener('error', function(e){
     error: { trending: null, new: null },
     lastUpdated: { trending: null, new: null },
     loading: false,
-    refreshing: false,
+    refreshingByTab: {},
     sortBy: 'new',
     filters: { search: '', minLiquidity: 0, minVolume: 0, minChange24h: null, maxAgeMinutes: null, minBuyPressure: null, maxFdv: null, minBuys1h: null, minHolders: null, excludeStaircase: false, platforms: new Set() },
     imageCache: {},
@@ -1426,8 +1426,8 @@ window.addEventListener('error', function(e){
 
 
   async function refresh(tab, silent){
-    if(state.refreshing) return;
-    state.refreshing = true;
+    if(state.refreshingByTab[tab]) return;
+    state.refreshingByTab[tab] = true;
     const network = state.network;
     if(!silent) state.loading = true;
     state.preserveOrder = !!silent;
@@ -1439,7 +1439,7 @@ window.addEventListener('error', function(e){
         // the network we've since left, so applying it here would mislabel that chain's pools
         // (wrong dexIds, wrong addresses) as the one now active. Just drop it.
         state.loading = false;
-        state.refreshing = false;
+        state.refreshingByTab[tab] = false;
         return;
       }
       const isFirstLoad = state.pools[tab] === null;
@@ -1461,7 +1461,7 @@ window.addEventListener('error', function(e){
       state.error[tab] = (err && err.message) ? err.message : 'Erreur réseau';
     }
     state.loading = false;
-    state.refreshing = false;
+    state.refreshingByTab[tab] = false;
     state.preserveOrder = !!silent;
     render();
   }
